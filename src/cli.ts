@@ -2,10 +2,19 @@
 
 import { Command } from 'commander';
 import React from 'react';
-import { render, isRawModeSupported } from 'ink';
+import { render } from 'ink';
 import { GitHubService } from './services/github.js';
 import { App } from './components/App.js';
 import { getGitHubToken, parseRepoFromGit, parseRepoFromArgs, loadConfig } from './utils/config.js';
+
+// Custom function to check if raw mode is supported
+function isRawModeSupported(): boolean {
+  try {
+    return Boolean(process.stdin.isTTY && process.stdin.setRawMode);
+  } catch {
+    return false;
+  }
+}
 
 const program = new Command();
 
@@ -71,14 +80,24 @@ async function main() {
       process.exit(1);
     }
 
+    // Add a small delay to ensure terminal is ready
+    console.log('⏳ Initializing terminal interface...');
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Ensure stdin is in raw mode for proper input handling
     try {
       process.stdin.setRawMode(true);
       process.stdin.resume();
+      
+      // Listen for data to keep stdin active
+      process.stdin.on('data', () => {});
+      
     } catch (error) {
       console.error('❌ Failed to set terminal to raw mode:', error);
       process.exit(1);
     }
+
+    console.log('🎮 Starting interactive interface...');
 
     const { waitUntilExit } = render(
       React.createElement(App, {
@@ -89,6 +108,7 @@ async function main() {
         stdin: process.stdin,
         stdout: process.stdout,
         stderr: process.stderr,
+        exitOnCtrlC: false,
       }
     );
 
@@ -104,11 +124,35 @@ async function main() {
       }
     };
 
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
+    process.on('SIGINT', () => {
+      console.log('📟 Received SIGINT');
+      cleanup();
+      process.exit(0);
+    });
+    process.on('SIGTERM', () => {
+      console.log('📟 Received SIGTERM');
+      cleanup();
+      process.exit(0);
+    });
     process.on('exit', cleanup);
 
+    console.log('🔄 Waiting for user interaction...');
+    
+    // Add process event debugging
+    process.on('uncaughtException', (err) => {
+      console.error('💥 Uncaught Exception:', err);
+      cleanup();
+      process.exit(1);
+    });
+
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+      cleanup();
+      process.exit(1);
+    });
+
     await waitUntilExit();
+    console.log('✅ Application exited normally');
     cleanup();
   } catch (error) {
     console.error('❌ Error:', error instanceof Error ? error.message : error);
