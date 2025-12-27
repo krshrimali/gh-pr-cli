@@ -5,6 +5,7 @@ import chalk from 'chalk';
 import { GitHubService } from '../services/github.js';
 import { ReviewForm } from './ReviewForm.js';
 import { DiffViewer } from './DiffViewer.js';
+import { MergeForm } from './MergeForm.js';
 import { ScrollableBox } from './ScrollableBox.js';
 import { TextBlock } from './TextBlock.js';
 import { openInBrowser } from '../utils/browser.js';
@@ -15,7 +16,7 @@ interface PRDetailProps {
   githubService: GitHubService;
 }
 
-type DetailMode = 'overview' | 'files' | 'diff' | 'comments' | 'reviews' | 'review_form';
+type DetailMode = 'overview' | 'files' | 'diff' | 'comments' | 'reviews' | 'review_form' | 'merge_form';
 
 export function PRDetail({ pr, githubService }: PRDetailProps) {
   const [mode, setMode] = useState<DetailMode>('overview');
@@ -25,8 +26,11 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [mergeLoading, setMergeLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [mergeable, setMergeable] = useState<boolean | null>(null);
+  const [mergeableState, setMergeableState] = useState<string>('');
 
   useEffect(() => {
     loadData();
@@ -46,17 +50,20 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
       pr.review_comments = freshPR.review_comments;
       pr.commits = freshPR.commits;
       
-      const [commentsData, reviewCommentsData, reviewsData, filesData] = await Promise.all([
+      const [commentsData, reviewCommentsData, reviewsData, filesData, mergeabilityData] = await Promise.all([
         githubService.getComments(pr.number),
         githubService.getReviewComments(pr.number),
         githubService.getReviews(pr.number),
         githubService.getFiles(pr.number),
+        githubService.checkPullRequestMergeability(pr.number),
       ]);
 
       setComments(commentsData);
       setReviewComments(reviewCommentsData);
       setReviews(reviewsData);
       setFiles(filesData);
+      setMergeable(mergeabilityData.mergeable);
+      setMergeableState(mergeabilityData.mergeable_state);
     } catch (error) {
       console.error('Failed to load PR data:', error);
     } finally {
@@ -72,6 +79,7 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
     if (input === 'c') setMode('comments');
     if (input === 'r') setMode('reviews');
     if (input === 'R' && mode !== 'review_form') setMode('review_form');
+    if (input === 'M' && mode !== 'merge_form' && pr.state === 'open') setMode('merge_form');
     
     // Browser shortcuts
     if (input === 'b') {
@@ -116,6 +124,33 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
     setMode('overview');
   };
 
+  const mergePullRequest = async (options: {
+    commit_title: string;
+    commit_message: string;
+    merge_method: 'merge' | 'squash' | 'rebase';
+  }) => {
+    setMergeLoading(true);
+    try {
+      const result = await githubService.mergePullRequest(pr.number, options);
+      console.log(`✅ Pull request merged: ${result.sha}`);
+      
+      // Update PR state
+      pr.state = 'closed';
+      
+      // Reload data to get updated state
+      await loadData();
+      setMode('overview');
+    } catch (error) {
+      console.error('❌ Failed to merge PR:', error);
+    } finally {
+      setMergeLoading(false);
+    }
+  };
+
+  const cancelMerge = () => {
+    setMode('overview');
+  };
+
 
   const getCurrentItems = () => {
     switch (mode) {
@@ -151,20 +186,37 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
         </Box>
       )}
 
-      <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
-        <Box flexDirection="column">
-          <Text color="white" bold>📊 Changes:</Text>
-          <Text color="green">+{pr.additions} additions</Text>
-          <Text color="red">-{pr.deletions} deletions</Text>
-          <Text color="gray">{pr.changed_files} files changed</Text>
+      <Box flexDirection="column" marginBottom={1}>
+        <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
+          <Box flexDirection="column">
+            <Text color="white" bold>📊 Changes:</Text>
+            <Text color="green">+{pr.additions} additions</Text>
+            <Text color="red">-{pr.deletions} deletions</Text>
+            <Text color="gray">{pr.changed_files} files changed</Text>
+          </Box>
+
+          <Box flexDirection="column">
+            <Text color="white" bold>💬 Discussion:</Text>
+            <Text color="blue">{pr.comments} comments</Text>
+            <Text color="blue">{pr.review_comments} review comments</Text>
+            <Text color="yellow">{pr.commits} commits</Text>
+          </Box>
         </Box>
 
-        <Box flexDirection="column">
-          <Text color="white" bold>💬 Discussion:</Text>
-          <Text color="blue">{pr.comments} comments</Text>
-          <Text color="blue">{pr.review_comments} review comments</Text>
-          <Text color="yellow">{pr.commits} commits</Text>
-        </Box>
+        {pr.state === 'open' && (
+          <Box borderStyle="single" borderColor="gray" padding={1}>
+            <Box flexDirection="column">
+              <Text color="white" bold>🔀 Merge Status:</Text>
+              {mergeable === null ? (
+                <Text color="yellow">⏳ Checking mergeability...</Text>
+              ) : mergeable && mergeableState !== 'blocked' ? (
+                <Text color="green">✅ Ready to merge (Press M to merge)</Text>
+              ) : (
+                <Text color="red">❌ Cannot merge - {mergeableState}</Text>
+              )}
+            </Box>
+          </Box>
+        )}
       </Box>
 
       {pr.labels.length > 0 && (
@@ -389,6 +441,16 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
           loading={reviewLoading}
         />
       );
+      case 'merge_form': return (
+        <MergeForm
+          pr={pr}
+          onMerge={mergePullRequest}
+          onCancel={cancelMerge}
+          loading={mergeLoading}
+          mergeable={mergeable}
+          mergeableState={mergeableState}
+        />
+      );
       default: return renderOverview();
     }
   };
@@ -404,6 +466,12 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
             <Text color={mode === 'comments' ? 'cyan' : 'gray'} bold>c</Text>omments |{' '}
             <Text color={mode === 'reviews' ? 'cyan' : 'gray'} bold>r</Text>eviews |{' '}
             <Text color={mode === 'review_form' ? 'cyan' : 'green'} bold>R</Text>eview
+            {pr.state === 'open' && (
+              <>
+                {' | '}
+                <Text color={mode === 'merge_form' ? 'cyan' : 'green'} bold>M</Text>erge
+              </>
+            )}
           </Text>
           {mode === 'diff' && selectedFile && (
             <Text color="yellow">
@@ -427,6 +495,7 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
         <Box width="100%" justifyContent="space-between">
           <Text color="gray">
             ESC: Back • ↑↓/j/k: Navigate • o/f/d/c/r: Tabs • b: Browser • R: Review
+            {pr.state === 'open' && ' • M: Merge'}
             {mode === 'files' && ' • Enter: View diff'}
             {mode === 'diff' && ' • w: Wrap • n: Line numbers'}
           </Text>

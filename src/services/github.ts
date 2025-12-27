@@ -572,4 +572,50 @@ export class GitHubService {
       commits: (pr as any).commits || 0,
     };
   }
+
+  async mergePullRequest(
+    prNumber: number,
+    options: {
+      commit_title?: string;
+      commit_message?: string;
+      merge_method?: 'merge' | 'squash' | 'rebase';
+    } = {}
+  ): Promise<{
+    sha: string;
+    merged: boolean;
+    message: string;
+  }> {
+    const response = await this.octokit.pulls.merge({
+      owner: this.owner,
+      repo: this.repo,
+      pull_number: prNumber,
+      commit_title: options.commit_title,
+      commit_message: options.commit_message,
+      merge_method: options.merge_method || 'merge',
+    });
+
+    return {
+      sha: response.data.sha,
+      merged: response.data.merged,
+      message: response.data.message,
+    };
+  }
+
+  async checkPullRequestMergeability(prNumber: number): Promise<{
+    mergeable: boolean | null;
+    mergeable_state: string;
+    rebaseable?: boolean;
+  }> {
+    const response = await this.octokit.pulls.get({
+      owner: this.owner,
+      repo: this.repo,
+      pull_number: prNumber,
+    });
+
+    return {
+      mergeable: response.data.mergeable,
+      mergeable_state: response.data.mergeable_state,
+      rebaseable: (response.data as any).rebaseable,
+    };
+  }
 }

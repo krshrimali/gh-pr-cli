@@ -18,6 +18,7 @@ export function StatusBar({ mode, loading, error, prCount, selectedPR }: StatusB
       case 'search': return '🔍 Search';
       case 'review': return '✅ Review';
       case 'create': return '📝 Create PR';
+      case 'merge_form': return '🔀 Merge PR';
       default: return mode;
     }
   };
