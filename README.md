@@ -1,5 +1,7 @@
 # 🚀 GitHub PR Review CLI
 
+NOTE: Made with Claude Code :)
+
 The most advanced GitHub Pull Request reviewer for the terminal! Built with modern TypeScript, React (Ink), and a beautiful TUI interface that brings the full GitHub PR experience to your command line.
 
 ## ✨ Features
