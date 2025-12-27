@@ -17,6 +17,7 @@ export function StatusBar({ mode, loading, error, prCount, selectedPR }: StatusB
       case 'detail': return `🔍 Detail: ${selectedPR ? `#${selectedPR.number}` : ''}`;
       case 'search': return '🔍 Search';
       case 'review': return '✅ Review';
+      case 'create': return '📝 Create PR';
       default: return mode;
     }
   };
