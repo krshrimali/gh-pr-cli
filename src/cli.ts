@@ -13,6 +13,8 @@ program
   .version('1.0.0')
   .option('-r, --repo <owner/repo>', 'GitHub repository (e.g., facebook/react)')
   .option('-t, --token <token>', 'GitHub personal access token')
+  .option('-u, --url <url>', 'GitHub base URL (e.g., https://github.enterprise.com for enterprise)')
+  .option('--api-url <url>', 'GitHub API URL (e.g., https://github.enterprise.com/api/v3)')
   .parse();
 
 async function main() {
@@ -36,9 +38,20 @@ async function main() {
       process.exit(1);
     }
 
-    const githubService = new GitHubService(token, repoInfo.owner, repoInfo.repo);
+    // Use CLI options, then git-detected URLs, then config, then defaults
+    const baseUrl = options.url || repoInfo.baseUrl || config.githubUrl;
+    const apiUrl = options.apiUrl || config.githubApiUrl;
 
-    console.log(`🚀 Starting GitHub PR Review for ${repoInfo.owner}/${repoInfo.repo}`);
+    const githubService = new GitHubService(
+      token, 
+      repoInfo.owner, 
+      repoInfo.repo,
+      baseUrl,
+      apiUrl
+    );
+
+    const urlInfo = options.url ? ` on ${options.url}` : '';
+    console.log(`🚀 Starting GitHub PR Review for ${repoInfo.owner}/${repoInfo.repo}${urlInfo}`);
     
     const { waitUntilExit } = render(
       React.createElement(App, {

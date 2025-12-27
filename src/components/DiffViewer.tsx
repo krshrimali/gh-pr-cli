@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { openInBrowser } from '../utils/browser.js';
 import type { File } from '../types/github.js';
+import type { GitHubService } from '../services/github.js';
 
 interface DiffViewerProps {
   file: File;
   onBack: () => void;
   height?: number;
-  prUrl?: string; // PR URL to construct file browser URL
+  githubService: GitHubService;
+  prNumber: number;
 }
 
 interface ParsedDiffLine {
@@ -18,7 +20,7 @@ interface ParsedDiffLine {
   originalLine: string;
 }
 
-export function DiffViewer({ file, onBack, height = 20, prUrl }: DiffViewerProps) {
+export function DiffViewer({ file, onBack, height = 20, githubService, prNumber }: DiffViewerProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
   const [wrapLines, setWrapLines] = useState(false);
   const [showLineNumbers, setShowLineNumbers] = useState(true);
@@ -186,9 +188,9 @@ export function DiffViewer({ file, onBack, height = 20, prUrl }: DiffViewerProps
       setWrapLines(!wrapLines);
     } else if (input === 'n') {
       setShowLineNumbers(!showLineNumbers);
-    } else if (input === 'b' && prUrl) {
+    } else if (input === 'b') {
       // Open file diff in browser
-      const fileUrl = `${prUrl}/files#diff-${encodeURIComponent(file.filename)}`;
+      const fileUrl = githubService.getWebUrl(`/pull/${prNumber}/files#diff-${encodeURIComponent(file.filename)}`);
       openInBrowser(fileUrl);
     }
   });
@@ -268,7 +270,7 @@ export function DiffViewer({ file, onBack, height = 20, prUrl }: DiffViewerProps
           </Text>
           <Text color="gray">
             ESC: Back • ↑↓/j/k: Scroll • PgUp/PgDn: Page • w: Wrap • n: Line numbers
-            {prUrl && ' • b: Open in browser'}
+            {' • b: Open in browser'}
           </Text>
         </Box>
       </Box>

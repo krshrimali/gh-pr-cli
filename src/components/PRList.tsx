@@ -134,7 +134,7 @@ export function PRList({ prs, selectedIndex, loading, error }: PRListProps) {
 
       <Box borderStyle="single" borderColor="gray" padding={1}>
         <Text color="gray">
-          ↑↓/j/k: Navigate • Enter: View PR • b: Open in browser • /: Search • r: Refresh • q: Quit
+          ↑↓/j/k: Navigate • Enter: View PR • b: Open in browser • /: Search • c: Create PR • r: Refresh • q: Quit
         </Text>
       </Box>
     </Box>

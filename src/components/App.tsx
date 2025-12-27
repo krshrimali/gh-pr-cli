@@ -7,6 +7,8 @@ import { PRDetail } from './PRDetail.js';
 import { SearchBox } from './SearchBox.js';
 import { StatusBar } from './StatusBar.js';
 import { openInBrowser } from '../utils/browser.js';
+import { GitService, type GitStatus } from '../utils/git.js';
+import { PRCreateForm } from './PRCreateForm.js';
 import type { PullRequest, AppConfig } from '../types/github.js';
 
 interface AppProps {
@@ -14,7 +16,7 @@ interface AppProps {
   githubService: GitHubService;
 }
 
-type AppMode = 'list' | 'detail' | 'search' | 'review' | 'comment';
+type AppMode = 'list' | 'detail' | 'search' | 'review' | 'comment' | 'create';
 
 export function App({ config, githubService }: AppProps) {
   const [mode, setMode] = useState<AppMode>('list');
@@ -24,10 +26,24 @@ export function App({ config, githubService }: AppProps) {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
+  const [createLoading, setCreateLoading] = useState(false);
 
   useEffect(() => {
     loadPRs();
+    loadGitStatus();
   }, []);
+
+  const loadGitStatus = async () => {
+    try {
+      if (GitService.isValidRepository()) {
+        const status = GitService.getGitStatus();
+        setGitStatus(status);
+      }
+    } catch (error) {
+      console.error('Failed to load git status:', error);
+    }
+  };
 
   const loadPRs = async () => {
     setLoading(true);
@@ -75,6 +91,43 @@ export function App({ config, githubService }: AppProps) {
     } else if (mode === 'search') {
       setMode('list');
       setSearchQuery('');
+    } else if (mode === 'create') {
+      setMode('list');
+    }
+  };
+
+  const createPullRequest = async (data: {
+    title: string;
+    body: string;
+    base: string;
+    head: string;
+    draft: boolean;
+  }) => {
+    setCreateLoading(true);
+    try {
+      // First, push the current branch if needed
+      if (gitStatus?.hasUnpushedCommits) {
+        console.log('🔄 Pushing branch...');
+        await GitService.pushCurrentBranch();
+      }
+
+      // Create the pull request
+      console.log('🚀 Creating pull request...');
+      const newPR = await githubService.createPullRequest(data);
+      
+      // Refresh PR list
+      await loadPRs();
+      
+      // Navigate to the created PR
+      setSelectedPR(newPR);
+      setMode('detail');
+      
+      console.log(`✅ Pull request created: #${newPR.number}`);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to create pull request');
+      console.error('❌ Failed to create PR:', error);
+    } finally {
+      setCreateLoading(false);
     }
   };
 
@@ -99,6 +152,11 @@ export function App({ config, githubService }: AppProps) {
       return;
     }
 
+    if (input === 'c' && mode === 'list' && gitStatus) {
+      setMode('create');
+      return;
+    }
+
     // List navigation with vim-like keys
     if (mode === 'list') {
       if (key.upArrow || input === 'k') {
@@ -119,7 +177,9 @@ export function App({ config, githubService }: AppProps) {
         }
       } else if (input === 'b' && prs[selectedIndex]) {
         // Open selected PR in browser
-        openInBrowser(prs[selectedIndex].html_url);
+        const pr = prs[selectedIndex];
+        const webUrl = githubService.getWebUrl(`/pull/${pr.number}`);
+        openInBrowser(webUrl);
       }
     }
   });
@@ -140,6 +200,19 @@ export function App({ config, githubService }: AppProps) {
           <PRDetail pr={selectedPR} githubService={githubService} />
         ) : (
           <Text>No PR selected</Text>
+        );
+      case 'create':
+        return gitStatus ? (
+          <PRCreateForm 
+            gitStatus={gitStatus}
+            onSubmit={createPullRequest}
+            onCancel={goBack}
+            loading={createLoading}
+          />
+        ) : (
+          <Box justifyContent="center" alignItems="center" height={20}>
+            <Text color="red">Not a git repository or git status unavailable</Text>
+          </Box>
         );
       default:
         return (

@@ -77,11 +77,12 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
     if (input === 'b') {
       if (mode === 'files' && files[selectedIndex]) {
         // Open file in GitHub browser
-        const fileUrl = `${pr.html_url}/files#diff-${encodeURIComponent(files[selectedIndex].filename)}`;
+        const fileUrl = githubService.getWebUrl(`/pull/${pr.number}/files#diff-${encodeURIComponent(files[selectedIndex].filename)}`);
         openInBrowser(fileUrl);
       } else {
         // Open PR in browser
-        openInBrowser(pr.html_url);
+        const prUrl = githubService.getWebUrl(`/pull/${pr.number}`);
+        openInBrowser(prUrl);
       }
     }
 
@@ -371,7 +372,8 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
           file={selectedFile} 
           onBack={() => setMode('files')}
           height={25}
-          prUrl={pr.html_url}
+          githubService={githubService}
+          prNumber={pr.number}
         />
       ) : (
         <Box justifyContent="center" alignItems="center" height={25}>
