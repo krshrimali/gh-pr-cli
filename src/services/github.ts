@@ -360,9 +360,9 @@ export class GitHubService {
     prNumber: number,
     state: ReviewState,
     body?: string,
-    comments?: Array<{ path: string; line: number; body: string }>
+    comments?: Array<{ path: string; line: number; body: string; start_line?: number; in_reply_to_id?: number }>
   ): Promise<Review> {
-    const event = state === 'approve' ? 'APPROVE' : 
+    const event = state === 'approve' ? 'APPROVE' :
                  state === 'request_changes' ? 'REQUEST_CHANGES' : 'COMMENT';
 
     const response = await this.octokit.pulls.createReview({
@@ -375,6 +375,8 @@ export class GitHubService {
         path: comment.path,
         line: comment.line,
         body: comment.body,
+        start_line: comment.start_line,
+        in_reply_to_id: comment.in_reply_to_id,
       })),
     });
 

@@ -9,6 +9,7 @@ import { groupCommentsByThread } from '../utils/commentThreads.js';
 interface DiffViewerProps {
   file: File;
   onBack: () => void;
+  onNavigationModeChange?: (isNavigationMode: boolean) => void;
   height?: number;
   githubService: GitHubService;
   prNumber: number;
@@ -26,7 +27,7 @@ interface ParsedDiffLine {
   originalLine: string;
 }
 
-export function DiffViewer({ file, onBack, height = 20, githubService, prNumber, commitSha, onAddPendingComment, pendingComments, existingComments }: DiffViewerProps) {
+export function DiffViewer({ file, onBack, onNavigationModeChange, height = 20, githubService, prNumber, commitSha, onAddPendingComment, pendingComments, existingComments }: DiffViewerProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
   const [wrapLines, setWrapLines] = useState(false);
   const [showLineNumbers, setShowLineNumbers] = useState(true);
@@ -39,6 +40,7 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [navigationMode, setNavigationMode] = useState(false);
 
   // Group comments by thread for display
   const commentThreads = groupCommentsByThread(existingComments);
@@ -230,9 +232,21 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
         setIsSelecting(false);
         setSelectionStart(null);
         setSelectionEnd(null);
-      } else {
+      } else if (navigationMode) {
+        // ESC in navigation mode -> go back
+        setNavigationMode(false);
+        onNavigationModeChange?.(false);
         onBack();
+      } else {
+        // ESC in normal mode -> enter navigation mode
+        setNavigationMode(true);
+        onNavigationModeChange?.(true);
       }
+      return;
+    }
+
+    // If in navigation mode, disable diff shortcuts, wait for user to exit or go back
+    if (navigationMode) {
       return;
     }
 
@@ -301,6 +315,11 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
           setIsSelecting(false);
           setSelectionStart(null);
           setSelectionEnd(null);
+          // Exit navigation mode when opening comment form
+          if (navigationMode) {
+            setNavigationMode(false);
+            onNavigationModeChange?.(false);
+          }
         }
       }
     } else if (input === 'r') {
@@ -313,6 +332,11 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
         setReplyingToComment(thread.topLevelComment);
         setCommentFormLine(currentLine.newLineNumber);
         setShowCommentForm(true);
+        // Exit navigation mode when opening reply form
+        if (navigationMode) {
+          setNavigationMode(false);
+          onNavigationModeChange?.(false);
+        }
       }
     } else if (input === 'w') {
       setWrapLines(!wrapLines);
@@ -475,8 +499,14 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
             )}
           </Text>
           <Text color="gray">
-            ESC: {isSelecting ? 'Cancel selection' : 'Back'} • ↑↓/j/k: Navigate • c: {isSelecting ? 'Confirm selection' : 'Comment/Select'} • r: Reply
-            {' • w: Wrap • n: Line numbers • b: Open in browser'}
+            {navigationMode ? (
+              <Text color="yellow" bold>Navigation Mode: Use tab shortcuts (o/f/d/c/r/R) or ESC to go back</Text>
+            ) : (
+              <>
+                ESC: {isSelecting ? 'Cancel selection' : 'Enter navigation mode'} • ↑↓/j/k: Navigate • c: {isSelecting ? 'Confirm selection' : 'Comment/Select'} • r: Reply
+                {' • w: Wrap • n: Line numbers • b: Open in browser'}
+              </>
+            )}
           </Text>
         </Box>
       </Box>
