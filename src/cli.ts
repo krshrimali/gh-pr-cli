@@ -2,7 +2,7 @@
 
 import { Command } from 'commander';
 import React from 'react';
-import { render } from 'ink';
+import { render, isRawModeSupported } from 'ink';
 import { GitHubService } from './services/github.js';
 import { App } from './components/App.js';
 import { getGitHubToken, parseRepoFromGit, parseRepoFromArgs, loadConfig } from './utils/config.js';
@@ -55,16 +55,74 @@ async function main() {
     const urlInfo = options.url ? ` on ${options.url}` : '';
     console.log(`🚀 Starting GitHub PR Review for ${repoInfo.owner}/${repoInfo.repo}${urlInfo}`);
     
+    // Debug terminal state
+    console.log(`🔍 Debug: TTY: ${process.stdin.isTTY}, Raw Mode Supported: ${isRawModeSupported()}`);
+    
+    // Check if stdin is available and in TTY mode
+    if (!process.stdin.isTTY) {
+      console.error('❌ This application requires an interactive terminal (TTY).');
+      console.error('Try running in a proper terminal or use: script -q /dev/null gh-pr-review');
+      process.exit(1);
+    }
+
+    if (!isRawModeSupported()) {
+      console.error('❌ Raw mode is not supported on this terminal.');
+      console.error('Try running in a different terminal or SSH with -t flag.');
+      process.exit(1);
+    }
+
+    // Ensure stdin is in raw mode for proper input handling
+    try {
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+    } catch (error) {
+      console.error('❌ Failed to set terminal to raw mode:', error);
+      process.exit(1);
+    }
+
     const { waitUntilExit } = render(
       React.createElement(App, {
         config: { ...config, githubToken: token },
         githubService,
-      })
+      }),
+      {
+        stdin: process.stdin,
+        stdout: process.stdout,
+        stderr: process.stderr,
+      }
     );
 
+    // Handle cleanup on exit
+    const cleanup = () => {
+      try {
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(false);
+          process.stdin.pause();
+        }
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    };
+
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+    process.on('exit', cleanup);
+
     await waitUntilExit();
+    cleanup();
   } catch (error) {
     console.error('❌ Error:', error instanceof Error ? error.message : error);
+    
+    // Restore terminal state before exit
+    try {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+      }
+    } catch (cleanupError) {
+      // Ignore cleanup errors
+    }
+    
     process.exit(1);
   }
 }

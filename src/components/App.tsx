@@ -31,8 +31,18 @@ export function App({ config, githubService }: AppProps) {
   const [prState, setPrState] = useState<'open' | 'closed' | 'all'>('open');
 
   useEffect(() => {
-    loadPRs();
-    loadGitStatus();
+    // Add error boundary for initial load
+    const init = async () => {
+      try {
+        await loadPRs();
+        await loadGitStatus();
+      } catch (err) {
+        console.error('❌ App initialization error:', err);
+        setError(`Initialization failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    };
+    
+    init();
   }, []);
 
   const loadGitStatus = async () => {
