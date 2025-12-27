@@ -32,7 +32,6 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
   const [mergeable, setMergeable] = useState<boolean | null>(null);
   const [mergeableState, setMergeableState] = useState<string>('');
   const [pendingComments, setPendingComments] = useState<PendingComment[]>([]);
-  const [diffNavigationMode, setDiffNavigationMode] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -94,16 +93,45 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
   };
 
   useInput((input, key) => {
-    // Mode switching
-    if (input === 'o') setMode('overview');
-    if (input === 'f') setMode('files');
-    if (input === 'd') setMode('diff');
-    if (input === 'c') setMode('comments');
-    if (input === 'r') setMode('reviews');
-    if (input === 'R') setMode('review_form');
-    if (input === 'M' && pr.state === 'open') setMode('merge_form');
+    // Global tab switching with Ctrl+key (works everywhere, even while typing)
+    if (key.ctrl) {
+      if (input === 'o') {
+        setMode('overview');
+        return;
+      }
+      if (input === 'f') {
+        setMode('files');
+        return;
+      }
+      if (input === 'd') {
+        setMode('diff');
+        return;
+      }
+      if (input === 'c') {
+        setMode('comments');
+        return;
+      }
+      if (input === 'r') {
+        setMode('reviews');
+        return;
+      }
+      if (input === 'R') {
+        setMode('review_form');
+        return;
+      }
+      if (input === 'm' && pr.state === 'open') {
+        setMode('merge_form');
+        return;
+      }
+    }
 
-    // Browser shortcuts
+    // Only handle navigation and browser shortcuts in list modes
+    // In diff/review_form/merge_form, those components handle their own input
+    if (mode === 'diff' || mode === 'review_form' || mode === 'merge_form') {
+      return;
+    }
+
+    // Browser shortcuts (only in list modes)
     if (input === 'b') {
       if (mode === 'files' && files[selectedIndex]) {
         // Open file in GitHub browser
@@ -116,7 +144,7 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
       }
     }
 
-    // Navigation
+    // Navigation (only in list modes)
     const currentItems = getCurrentItems();
     if (key.upArrow || input === 'k') {
       setSelectedIndex(Math.max(0, selectedIndex - 1));
@@ -127,10 +155,6 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
       setSelectedFile(files[selectedIndex]);
       setMode('diff');
     }
-  }, {
-    // Only handle input when in "list" modes OR when diff is in navigation mode
-    // Disable in "detail" modes (diff, review_form, merge_form) - they handle their own input
-    isActive: (mode !== 'diff' && mode !== 'review_form' && mode !== 'merge_form') || diffNavigationMode
   });
 
   const submitReview = async (state: ReviewState, body: string) => {
@@ -468,11 +492,7 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
       case 'diff': return selectedFile ? (
         <DiffViewer
           file={selectedFile}
-          onBack={() => {
-            setDiffNavigationMode(false);
-            setMode('files');
-          }}
-          onNavigationModeChange={setDiffNavigationMode}
+          onBack={() => setMode('files')}
           height={25}
           githubService={githubService}
           prNumber={pr.number}
@@ -550,39 +570,17 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
       <Box borderStyle="single" borderColor="gray" padding={1}>
         <Box width="100%" justifyContent="space-between">
           <Text color="gray">
-            {diffNavigationMode ? (
-              // In diff navigation mode: tab shortcuts work
-              <>
-                Tab shortcuts active • o/f/d/c/r/R: Navigate tabs • ESC: Back to diff or go back
-                {pendingComments.length > 0 && (
-                  <Text color="yellow">
-                    {' • '}{pendingComments.length} pending comment{pendingComments.length !== 1 ? 's' : ''}
-                  </Text>
-                )}
-              </>
-            ) : mode === 'diff' || mode === 'review_form' || mode === 'merge_form' ? (
-              // In detail modes: ESC exits, no tab shortcuts available
-              <>
-                ESC: Exit to use tab shortcuts
-                {pendingComments.length > 0 && (
-                  <Text color="yellow">
-                    {' • '}{pendingComments.length} pending comment{pendingComments.length !== 1 ? 's' : ''}
-                  </Text>
-                )}
-                {mode === 'diff' && ' • See status bar above for diff shortcuts'}
-              </>
+            Ctrl+o/f/d/c/r: Tabs • Ctrl+R: Review
+            {pr.state === 'open' && ' • Ctrl+m: Merge'}
+            {pendingComments.length > 0 && (
+              <Text color="yellow">
+                {' • '}{pendingComments.length} pending comment{pendingComments.length !== 1 ? 's' : ''}
+              </Text>
+            )}
+            {mode === 'overview' || mode === 'files' || mode === 'comments' || mode === 'reviews' ? (
+              <>{' • '}ESC: Back • ↑↓/j/k: Navigate • b: Browser{mode === 'files' && ' • Enter: View diff'}</>
             ) : (
-              // In list modes: all shortcuts available
-              <>
-                ESC: Back • ↑↓/j/k: Navigate • o/f/d/c/r: Tabs • b: Browser • R: Review
-                {pendingComments.length > 0 && (
-                  <Text color="yellow">
-                    {' • '}{pendingComments.length} pending comment{pendingComments.length !== 1 ? 's' : ''}
-                  </Text>
-                )}
-                {pr.state === 'open' && ' • M: Merge'}
-                {mode === 'files' && ' • Enter: View diff'}
-              </>
+              <>{' • '}ESC: Back{mode === 'diff' && ' • See diff shortcuts above'}</>
             )}
           </Text>
           <Text color="cyan">
