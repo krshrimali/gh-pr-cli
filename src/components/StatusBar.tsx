@@ -8,16 +8,18 @@ interface StatusBarProps {
   error: string | null;
   prCount: number;
   selectedPR: PullRequest | null;
+  prState?: 'open' | 'closed' | 'all';
 }
 
-export function StatusBar({ mode, loading, error, prCount, selectedPR }: StatusBarProps) {
+export function StatusBar({ mode, loading, error, prCount, selectedPR, prState = 'open' }: StatusBarProps) {
   const getModeDisplay = () => {
     switch (mode) {
-      case 'list': return `📋 List (${prCount} PRs)`;
+      case 'list': return `📋 ${prState.charAt(0).toUpperCase() + prState.slice(1)} (${prCount} PRs)`;
       case 'detail': return `🔍 Detail: ${selectedPR ? `#${selectedPR.number}` : ''}`;
       case 'search': return '🔍 Search';
       case 'review': return '✅ Review';
       case 'create': return '📝 Create PR';
+      case 'merge_form': return '🔀 Merge PR';
       default: return mode;
     }
   };

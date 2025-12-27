@@ -11,33 +11,10 @@ interface PRListProps {
   onSelect: (pr: PullRequest) => void;
   loading: boolean;
   error: string | null;
+  currentState: 'open' | 'closed' | 'all';
 }
 
-export function PRList({ prs, selectedIndex, loading, error }: PRListProps) {
-  if (loading) {
-    return (
-      <Box justifyContent="center" alignItems="center" height="100%">
-        <Text color="yellow">🔄 Loading pull requests...</Text>
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Box justifyContent="center" alignItems="center" height="100%">
-        <Text color="red">❌ Error: {error}</Text>
-      </Box>
-    );
-  }
-
-  if (prs.length === 0) {
-    return (
-      <Box justifyContent="center" alignItems="center" height="100%">
-        <Text color="gray">No pull requests found</Text>
-      </Box>
-    );
-  }
-
+export function PRList({ prs, selectedIndex, loading, error, currentState }: PRListProps) {
   const getStateColor = (state: string, draft: boolean) => {
     if (draft) return 'gray';
     switch (state) {
@@ -58,9 +35,121 @@ export function PRList({ prs, selectedIndex, loading, error }: PRListProps) {
     }
   };
 
+  const getStateFilterDisplay = () => {
+    const stateInfo = {
+      open: { label: 'Open', icon: '🟢', key: '1' },
+      closed: { label: 'Closed', icon: '🔴', key: '2' },
+      all: { label: 'All', icon: '📋', key: '3' }
+    };
+
+    return (
+      <Box borderStyle="single" borderColor="gray" padding={1} marginBottom={1}>
+        <Box>
+          <Text color="white" bold>Filter: </Text>
+          {Object.entries(stateInfo).map(([state, info], index) => (
+            <Text key={state}>
+              <Text color={currentState === state ? 'cyan' : 'gray'} bold={currentState === state}>
+                {info.icon} {info.label}
+              </Text>
+              <Text color="gray"> ({info.key})</Text>
+              {index < Object.entries(stateInfo).length - 1 && <Text color="gray"> • </Text>}
+            </Text>
+          ))}
+        </Box>
+      </Box>
+    );
+  };
+
+  if (loading) {
+    return (
+      <Box flexDirection="column" height="100%">
+        <Box justifyContent="center" alignItems="center" flex={1}>
+          <Box flexDirection="column" alignItems="center">
+            <Text color="yellow">🔄 Loading {currentState} pull requests...</Text>
+            <Text color="gray" marginTop={1}>
+              Current filter: {currentState.toUpperCase()}
+            </Text>
+          </Box>
+        </Box>
+        
+        <Box borderStyle="single" borderColor="gray" padding={1}>
+          <Text color="gray">
+            1/2/3: Filter • /: Search • c: Create PR • r: Refresh • q: Quit
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box flexDirection="column" height="100%">
+        <Box justifyContent="center" alignItems="center" flex={1}>
+          <Box flexDirection="column" alignItems="center">
+            <Text color="red" bold>❌ Error loading {currentState} pull requests</Text>
+            <Text color="red" marginTop={1}>{error}</Text>
+            <Text color="gray" marginTop={2}>
+              Press 'r' to refresh or try switching filters:
+            </Text>
+            <Box marginTop={1}>
+              <Text color="cyan">Press 1</Text>
+              <Text color="gray"> for open PRs • </Text>
+              <Text color="cyan">Press 2</Text>
+              <Text color="gray"> for closed PRs • </Text>
+              <Text color="cyan">Press 3</Text>
+              <Text color="gray"> for all PRs</Text>
+            </Box>
+          </Box>
+        </Box>
+        
+        <Box borderStyle="single" borderColor="gray" padding={1}>
+          <Text color="gray">
+            1/2/3: Filter • r: Refresh • /: Search • c: Create PR • q: Quit
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (prs.length === 0) {
+    return (
+      <Box flexDirection="column" height="100%">
+        {getStateFilterDisplay()}
+        
+        <Box justifyContent="center" alignItems="center" flex={1}>
+          <Box flexDirection="column" alignItems="center">
+            <Text color="gray" bold>No {currentState} pull requests found</Text>
+            <Text color="gray" marginTop={1}>
+              Try switching to a different filter:
+            </Text>
+            <Box marginTop={1}>
+              <Text color="cyan">Press 1</Text>
+              <Text color="gray"> for open PRs • </Text>
+              <Text color="cyan">Press 2</Text>
+              <Text color="gray"> for closed PRs • </Text>
+              <Text color="cyan">Press 3</Text>
+              <Text color="gray"> for all PRs</Text>
+            </Box>
+            {currentState === 'open' && (
+              <Text color="yellow" marginTop={1}>
+                💡 Try creating a PR with 'c' or check closed PRs with '2'
+              </Text>
+            )}
+          </Box>
+        </Box>
+
+        <Box borderStyle="single" borderColor="gray" padding={1}>
+          <Text color="gray">
+            1/2/3: Filter • /: Search • c: Create PR • r: Refresh • q: Quit
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column" height="100%">
-      <ScrollableBox height={25} title={`🔍 Pull Requests (${prs.length})`} borderColor="cyan">
+      <ScrollableBox height={25} title={`🔍 ${currentState.charAt(0).toUpperCase() + currentState.slice(1)} Pull Requests (${prs.length})`} borderColor="cyan">
         <Box flexDirection="column" paddingX={1}>
           {prs.map((pr, index) => {
             const isSelected = index === selectedIndex;
@@ -134,7 +223,7 @@ export function PRList({ prs, selectedIndex, loading, error }: PRListProps) {
 
       <Box borderStyle="single" borderColor="gray" padding={1}>
         <Text color="gray">
-          ↑↓/j/k: Navigate • Enter: View PR • b: Open in browser • /: Search • c: Create PR • r: Refresh • q: Quit
+          ↑↓/j/k: Navigate • Enter: View PR • b: Open in browser • /: Search • 1/2/3: Filter • c: Create PR • r: Refresh • q: Quit
         </Text>
       </Box>
     </Box>
