@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import TextInput from 'ink-text-input';
 import type { ReviewState, PendingComment } from '../types/github.js';
 
 interface ReviewFormProps {
@@ -39,16 +40,14 @@ export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComment
           setMode('comment');
         }
       }
-    } else if (mode === 'comment') {
-      if (key.return && key.ctrl) {
-        onSubmit(selectedState, body);
-      } else if (key.backspace || key.delete) {
-        setBody(body.slice(0, -1));
-      } else if (!key.ctrl && !key.meta && input) {
-        setBody(body + input);
-      }
     }
-  });
+  }, { isActive: mode === 'select' });
+
+  const handleSubmit = () => {
+    if (body.trim() || selectedState === 'approve') {
+      onSubmit(selectedState, body || 'Approved');
+    }
+  };
 
   if (loading) {
     return (
@@ -61,7 +60,7 @@ export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComment
   if (mode === 'comment') {
     return (
       <Box flexDirection="column" justifyContent="center" alignItems="center" height="100%">
-        <Box borderStyle="round" borderColor="cyan" padding={2} minWidth={60}>
+        <Box borderStyle="round" borderColor="cyan" padding={2} minWidth={70}>
           <Box flexDirection="column">
             <Text color="cyan" bold marginBottom={1}>
               ✍️  Write Review Comment
@@ -73,17 +72,24 @@ export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComment
               </Text>
             </Box>
 
-            <Box borderStyle="single" borderColor="gray" padding={1} minHeight={5} marginBottom={1}>
-              <Text color="white">
-                {body}
-                <Text color="cyan">█</Text>
-              </Text>
+            <Box borderStyle="double" borderColor="cyan" padding={1} minHeight={3} marginBottom={1}>
+              <Box flexDirection="column" width="100%">
+                <Text color="gray" dimColor marginBottom={1}>
+                  💬 Type your review comment:
+                </Text>
+                <TextInput
+                  value={body}
+                  onChange={setBody}
+                  onSubmit={handleSubmit}
+                  placeholder="Enter your review comment (optional for approvals)..."
+                />
+              </Box>
             </Box>
 
             <Box justifyContent="center" marginTop={1}>
-              <Text color="gray">
-                Ctrl+Enter: Submit • ESC: Back
-              </Text>
+              <Text color="green" bold>✓ Enter: Submit</Text>
+              <Text color="gray"> • </Text>
+              <Text color="red" bold>✗ ESC: Back</Text>
             </Box>
           </Box>
         </Box>

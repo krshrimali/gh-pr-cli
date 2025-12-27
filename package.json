@@ -26,6 +26,7 @@
     "commander": "^14.0.2",
     "date-fns": "^4.1.0",
     "ink": "^6.6.0",
+    "ink-text-input": "^6.0.0",
     "inquirer": "^13.1.0",
     "react": "^19.2.3",
     "react-devtools-core": "^6.1.5",

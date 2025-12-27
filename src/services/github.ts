@@ -305,9 +305,11 @@ export class GitHubService {
       path: comment.path,
       position: comment.position,
       line: comment.line,
+      start_line: comment.start_line,
       commit_id: comment.commit_id,
       diff_hunk: comment.diff_hunk,
       html_url: comment.html_url,
+      in_reply_to_id: comment.in_reply_to_id,
     }));
   }
 

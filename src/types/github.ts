@@ -76,9 +76,11 @@ export interface ReviewComment {
   path: string;
   position?: number;
   line?: number;
+  start_line?: number;
   commit_id: string;
   diff_hunk: string;
   html_url: string;
+  in_reply_to_id?: number;
 }
 
 export interface Review {
@@ -108,7 +110,16 @@ export interface PendingComment {
   id: string;
   path: string;
   line: number;
+  startLine?: number;
   body: string;
+  inReplyTo?: number;
+}
+
+export interface CommentThread {
+  topLevelComment: ReviewComment;
+  replies: ReviewComment[];
+  line: number;
+  startLine?: number;
 }
 
 export interface AppConfig {

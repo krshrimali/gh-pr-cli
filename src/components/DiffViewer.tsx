@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { openInBrowser } from '../utils/browser.js';
 import { InlineReviewForm } from './InlineReviewForm.js';
-import type { File, PendingComment } from '../types/github.js';
+import type { File, PendingComment, ReviewComment } from '../types/github.js';
 import type { GitHubService } from '../services/github.js';
+import { groupCommentsByThread } from '../utils/commentThreads.js';
 
 interface DiffViewerProps {
   file: File;
@@ -12,8 +13,9 @@ interface DiffViewerProps {
   githubService: GitHubService;
   prNumber: number;
   commitSha: string;
-  onAddPendingComment: (path: string, line: number, body: string) => void;
+  onAddPendingComment: (path: string, line: number, body: string, startLine?: number, inReplyTo?: number) => void;
   pendingComments: PendingComment[];
+  existingComments: ReviewComment[];
 }
 
 interface ParsedDiffLine {
@@ -24,7 +26,7 @@ interface ParsedDiffLine {
   originalLine: string;
 }
 
-export function DiffViewer({ file, onBack, height = 20, githubService, prNumber, commitSha, onAddPendingComment, pendingComments }: DiffViewerProps) {
+export function DiffViewer({ file, onBack, height = 20, githubService, prNumber, commitSha, onAddPendingComment, pendingComments, existingComments }: DiffViewerProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
   const [wrapLines, setWrapLines] = useState(false);
   const [showLineNumbers, setShowLineNumbers] = useState(true);
@@ -32,6 +34,14 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
   const [currentLineIndex, setCurrentLineIndex] = useState(0);
   const [showCommentForm, setShowCommentForm] = useState(false);
   const [commentFormLine, setCommentFormLine] = useState<number | null>(null);
+  const [commentFormStartLine, setCommentFormStartLine] = useState<number | undefined>(undefined);
+  const [replyingToComment, setReplyingToComment] = useState<ReviewComment | null>(null);
+  const [selectionStart, setSelectionStart] = useState<number | null>(null);
+  const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+
+  // Group comments by thread for display
+  const commentThreads = groupCommentsByThread(existingComments);
 
   useEffect(() => {
     if (file.patch) {
@@ -112,17 +122,34 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
     return line.newLineNumber !== undefined && (line.type === 'add' || line.type === 'context');
   };
 
+  const getSelectedRange = (): { start: number; end: number } | null => {
+    if (!selectionStart) return null;
+    const start = Math.min(selectionStart, selectionEnd || selectionStart);
+    const end = Math.max(selectionStart, selectionEnd || selectionStart);
+    return { start, end };
+  };
+
   const handleCommentSubmit = async (body: string) => {
     if (commentFormLine && file.filename) {
-      onAddPendingComment(file.filename, commentFormLine, body);
+      onAddPendingComment(
+        file.filename,
+        commentFormLine,
+        body,
+        commentFormStartLine,
+        replyingToComment?.id
+      );
       setShowCommentForm(false);
       setCommentFormLine(null);
+      setCommentFormStartLine(undefined);
+      setReplyingToComment(null);
     }
   };
 
   const handleCommentCancel = () => {
     setShowCommentForm(false);
     setCommentFormLine(null);
+    setCommentFormStartLine(undefined);
+    setReplyingToComment(null);
   };
 
   const getVisibleLines = () => {
@@ -198,7 +225,14 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
     }
 
     if (key.escape) {
-      onBack();
+      if (isSelecting) {
+        // Cancel selection
+        setIsSelecting(false);
+        setSelectionStart(null);
+        setSelectionEnd(null);
+      } else {
+        onBack();
+      }
       return;
     }
 
@@ -212,12 +246,26 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
       } else if (scrollOffset > 0) {
         setScrollOffset(scrollOffset - 1);
       }
+      // Update selection end if selecting
+      if (isSelecting) {
+        const currentLine = visibleLines[Math.max(0, currentLineIndex - 1)] || visibleLines[currentLineIndex];
+        if (currentLine?.newLineNumber) {
+          setSelectionEnd(currentLine.newLineNumber);
+        }
+      }
     } else if (key.downArrow || input === 'j') {
       // Move cursor down or scroll down
       if (currentLineIndex < viewHeight - 1 && currentLineIndex < visibleLines.length - 1) {
         setCurrentLineIndex(currentLineIndex + 1);
       } else if (scrollOffset < maxScroll) {
         setScrollOffset(scrollOffset + 1);
+      }
+      // Update selection end if selecting
+      if (isSelecting) {
+        const currentLine = visibleLines[Math.min(visibleLines.length - 1, currentLineIndex + 1)] || visibleLines[currentLineIndex];
+        if (currentLine?.newLineNumber) {
+          setSelectionEnd(currentLine.newLineNumber);
+        }
       }
     } else if (key.pageUp) {
       setScrollOffset(Math.max(0, scrollOffset - viewHeight));
@@ -231,10 +279,38 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
     } else if (input === 'G') {
       setScrollOffset(maxScroll);
       setCurrentLineIndex(Math.min(viewHeight - 1, diffLines.length - maxScroll - 1));
-    } else if (input === 'c') {
-      // Open comment form for current line
+    } else if (input === 'c' || (isSelecting && key.return)) {
+      // Handle multi-line selection
       const currentLine = visibleLines[currentLineIndex];
-      if (currentLine && isCommentableLine(currentLine) && currentLine.newLineNumber) {
+      if (!currentLine || !isCommentableLine(currentLine) || !currentLine.newLineNumber) {
+        return;
+      }
+
+      if (!isSelecting) {
+        // Start selection
+        setSelectionStart(currentLine.newLineNumber);
+        setSelectionEnd(currentLine.newLineNumber);
+        setIsSelecting(true);
+      } else {
+        // Complete selection and open form
+        const range = getSelectedRange();
+        if (range && currentLine.newLineNumber) {
+          setCommentFormLine(range.end);
+          setCommentFormStartLine(range.start !== range.end ? range.start : undefined);
+          setShowCommentForm(true);
+          setIsSelecting(false);
+          setSelectionStart(null);
+          setSelectionEnd(null);
+        }
+      }
+    } else if (input === 'r') {
+      // Reply to comment thread on current line
+      const currentLine = visibleLines[currentLineIndex];
+      if (!currentLine?.newLineNumber) return;
+
+      const thread = commentThreads.get(currentLine.newLineNumber);
+      if (thread) {
+        setReplyingToComment(thread.topLevelComment);
         setCommentFormLine(currentLine.newLineNumber);
         setShowCommentForm(true);
       }
@@ -294,6 +370,12 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
             const lineNumber = renderLineNumber(line);
             const wrappedContent = wrapText(line.content, 80);
 
+            // Check if line is in selection range
+            const range = getSelectedRange();
+            const isInSelection = range && line.newLineNumber &&
+              line.newLineNumber >= range.start &&
+              line.newLineNumber <= range.end;
+
             return (
               <Box key={displayIndex} flexDirection="column">
                 {wrappedContent.map((wrappedLine, wrapIndex) => (
@@ -317,7 +399,11 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
                     {/* Content */}
                     <Text
                       color={lineColor as any}
-                      backgroundColor={isCursorLine && isCommentableLine(line) ? 'blue' : undefined}
+                      backgroundColor={
+                        isInSelection ? 'magenta' :
+                        isCursorLine && isCommentableLine(line) ? 'blue' :
+                        undefined
+                      }
                     >
                       {wrapIndex === 0 ? linePrefix : ' '}
                       {wrappedLine}
@@ -331,6 +417,41 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
                     )}
                   </Box>
                 ))}
+
+                {/* Existing comment threads */}
+                {(() => {
+                  const lineThread = line.newLineNumber ? commentThreads.get(line.newLineNumber) : null;
+                  if (!lineThread) return null;
+
+                  return (
+                    <Box borderStyle="single" borderColor="gray" marginLeft={2} marginTop={1} padding={1} flexDirection="column">
+                      {/* Top level comment */}
+                      <Box flexDirection="column" marginBottom={1}>
+                        <Text color="cyan" bold>
+                          {lineThread.topLevelComment.user.login} commented:
+                        </Text>
+                        <Text color="white">{lineThread.topLevelComment.body}</Text>
+                      </Box>
+
+                      {/* Replies */}
+                      {lineThread.replies.map(reply => (
+                        <Box key={reply.id} flexDirection="column" marginLeft={2} marginBottom={1}>
+                          <Text color="gray">
+                            ↳ {reply.user.login} replied:
+                          </Text>
+                          <Text color="white">{reply.body}</Text>
+                        </Box>
+                      ))}
+
+                      {/* Reply prompt */}
+                      {isCursorLine && (
+                        <Text color="yellow" marginTop={1}>
+                          [Press 'r' to reply]
+                        </Text>
+                      )}
+                    </Box>
+                  );
+                })()}
               </Box>
             );
           })
@@ -347,10 +468,15 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
                 {' • '}{pendingComments.length} pending
               </Text>
             )}
+            {isSelecting && selectionStart && selectionEnd && (
+              <Text color="magenta">
+                {' • '}Selecting lines {Math.min(selectionStart, selectionEnd)}-{Math.max(selectionStart, selectionEnd)}
+              </Text>
+            )}
           </Text>
           <Text color="gray">
-            ESC: Back • ↑↓/j/k: Navigate cursor • c: Comment on line • w: Wrap • n: Line numbers
-            {' • b: Open in browser'}
+            ESC: {isSelecting ? 'Cancel selection' : 'Back'} • ↑↓/j/k: Navigate • c: {isSelecting ? 'Confirm selection' : 'Comment/Select'} • r: Reply
+            {' • w: Wrap • n: Line numbers • b: Open in browser'}
           </Text>
         </Box>
       </Box>
@@ -360,6 +486,8 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
         <InlineReviewForm
           file={file.filename}
           line={commentFormLine}
+          startLine={commentFormStartLine}
+          replyingTo={replyingToComment || undefined}
           onSubmit={handleCommentSubmit}
           onCancel={handleCommentCancel}
           loading={false}

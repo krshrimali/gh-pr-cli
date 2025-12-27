@@ -72,12 +72,14 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
     }
   };
 
-  const addPendingComment = (path: string, line: number, body: string) => {
+  const addPendingComment = (path: string, line: number, body: string, startLine?: number, inReplyTo?: number) => {
     const newComment: PendingComment = {
       id: crypto.randomUUID(),
       path,
       line,
+      startLine,
       body,
+      inReplyTo,
     };
     setPendingComments([...pendingComments, newComment]);
   };
@@ -133,7 +135,9 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
         ? pendingComments.map(pc => ({
             path: pc.path,
             line: pc.line,
+            start_line: pc.startLine,
             body: pc.body,
+            in_reply_to_id: pc.inReplyTo,
           }))
         : undefined;
 
@@ -464,6 +468,7 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
           commitSha={pr.head.sha}
           onAddPendingComment={addPendingComment}
           pendingComments={pendingComments.filter(pc => pc.path === selectedFile.filename)}
+          existingComments={reviewComments.filter(rc => rc.path === selectedFile.filename)}
         />
       ) : (
         <Box justifyContent="center" alignItems="center" height={25}>
