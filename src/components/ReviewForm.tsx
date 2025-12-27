@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import type { ReviewState } from '../types/github.js';
+import type { ReviewState, PendingComment } from '../types/github.js';
 
 interface ReviewFormProps {
   onSubmit: (state: ReviewState, body: string) => Promise<void>;
   onCancel: () => void;
   loading?: boolean;
+  pendingComments?: PendingComment[];
+  onDeletePendingComment?: (id: string) => void;
 }
 
-export function ReviewForm({ onSubmit, onCancel, loading = false }: ReviewFormProps) {
+export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComments, onDeletePendingComment }: ReviewFormProps) {
   const [selectedState, setSelectedState] = useState<ReviewState>('comment');
   const [body, setBody] = useState('');
   const [mode, setMode] = useState<'select' | 'comment'>('select');
@@ -146,6 +148,36 @@ export function ReviewForm({ onSubmit, onCancel, loading = false }: ReviewFormPr
               );
             })}
           </Box>
+
+          {/* Pending Comments Summary */}
+          {pendingComments && pendingComments.length > 0 && (
+            <Box flexDirection="column" borderStyle="single" borderColor="yellow" padding={1} marginBottom={2}>
+              <Text color="yellow" bold marginBottom={1}>
+                📝 {pendingComments.length} Pending Comment{pendingComments.length !== 1 ? 's' : ''}
+              </Text>
+              <Box flexDirection="column">
+                {pendingComments.slice(0, 3).map((comment) => (
+                  <Box key={comment.id} flexDirection="column" marginBottom={1}>
+                    <Text color="gray">
+                      {comment.path}:{comment.line}
+                    </Text>
+                    <Text color="white">
+                      {comment.body.substring(0, 40)}
+                      {comment.body.length > 40 ? '...' : ''}
+                    </Text>
+                  </Box>
+                ))}
+                {pendingComments.length > 3 && (
+                  <Text color="gray">
+                    ... and {pendingComments.length - 3} more
+                  </Text>
+                )}
+              </Box>
+              <Text color="gray" marginTop={1}>
+                These will be submitted with your review
+              </Text>
+            </Box>
+          )}
 
           <Box justifyContent="center" marginTop={1}>
             <Text color="gray">

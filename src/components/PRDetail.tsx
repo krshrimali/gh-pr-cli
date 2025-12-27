@@ -9,7 +9,7 @@ import { MergeForm } from './MergeForm.js';
 import { ScrollableBox } from './ScrollableBox.js';
 import { TextBlock } from './TextBlock.js';
 import { openInBrowser } from '../utils/browser.js';
-import type { PullRequest, Comment, ReviewComment, Review, File, ReviewState } from '../types/github.js';
+import type { PullRequest, Comment, ReviewComment, Review, File, ReviewState, PendingComment } from '../types/github.js';
 
 interface PRDetailProps {
   pr: PullRequest;
@@ -31,6 +31,7 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [mergeable, setMergeable] = useState<boolean | null>(null);
   const [mergeableState, setMergeableState] = useState<string>('');
+  const [pendingComments, setPendingComments] = useState<PendingComment[]>([]);
 
   useEffect(() => {
     loadData();
@@ -69,6 +70,24 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const addPendingComment = (path: string, line: number, body: string) => {
+    const newComment: PendingComment = {
+      id: crypto.randomUUID(),
+      path,
+      line,
+      body,
+    };
+    setPendingComments([...pendingComments, newComment]);
+  };
+
+  const deletePendingComment = (id: string) => {
+    setPendingComments(pendingComments.filter(c => c.id !== id));
+  };
+
+  const clearPendingComments = () => {
+    setPendingComments([]);
   };
 
   useInput((input, key) => {
@@ -110,8 +129,17 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
   const submitReview = async (state: ReviewState, body: string) => {
     setReviewLoading(true);
     try {
-      await githubService.createReview(pr.number, state, body);
+      const comments = pendingComments.length > 0
+        ? pendingComments.map(pc => ({
+            path: pc.path,
+            line: pc.line,
+            body: pc.body,
+          }))
+        : undefined;
+
+      await githubService.createReview(pr.number, state, body, comments);
       await loadData(); // Reload to show new review
+      clearPendingComments(); // Clear after success
       setMode('reviews');
     } catch (error) {
       console.error('Failed to submit review:', error);
@@ -260,6 +288,8 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
             const statusColor = status.color;
             const statusIcon = status.icon;
 
+            const pendingCount = pendingComments.filter(pc => pc.path === file.filename).length;
+
             return (
               <Box
                 key={file.filename}
@@ -275,6 +305,11 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
                       <Text color={isSelected ? 'black' : statusColor as any} bold={isSelected}>
                         {statusIcon} {file.filename}
                       </Text>
+                      {pendingCount > 0 && (
+                        <Text color="yellow" marginLeft={1}>
+                          ({pendingCount} pending)
+                        </Text>
+                      )}
                       {file.previous_filename && (
                         <Text color={isSelected ? 'black' : 'gray'} marginLeft={1}>
                           (was {file.previous_filename})
@@ -420,12 +455,15 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
     switch (mode) {
       case 'files': return renderFiles();
       case 'diff': return selectedFile ? (
-        <DiffViewer 
-          file={selectedFile} 
+        <DiffViewer
+          file={selectedFile}
           onBack={() => setMode('files')}
           height={25}
           githubService={githubService}
           prNumber={pr.number}
+          commitSha={pr.head.sha}
+          onAddPendingComment={addPendingComment}
+          pendingComments={pendingComments.filter(pc => pc.path === selectedFile.filename)}
         />
       ) : (
         <Box justifyContent="center" alignItems="center" height={25}>
@@ -439,6 +477,8 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
           onSubmit={submitReview}
           onCancel={cancelReview}
           loading={reviewLoading}
+          pendingComments={pendingComments}
+          onDeletePendingComment={deletePendingComment}
         />
       );
       case 'merge_form': return (
@@ -495,9 +535,14 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
         <Box width="100%" justifyContent="space-between">
           <Text color="gray">
             ESC: Back • ↑↓/j/k: Navigate • o/f/d/c/r: Tabs • b: Browser • R: Review
+            {pendingComments.length > 0 && (
+              <Text color="yellow">
+                {' • '}{pendingComments.length} pending comment{pendingComments.length !== 1 ? 's' : ''}
+              </Text>
+            )}
             {pr.state === 'open' && ' • M: Merge'}
             {mode === 'files' && ' • Enter: View diff'}
-            {mode === 'diff' && ' • w: Wrap • n: Line numbers'}
+            {mode === 'diff' && ' • c: Comment on line • w: Wrap • n: Line numbers'}
           </Text>
           <Text color="cyan">
             {mode.toUpperCase()}

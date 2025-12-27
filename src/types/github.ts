@@ -104,6 +104,13 @@ export interface File {
 
 export type ReviewState = 'approve' | 'request_changes' | 'comment';
 
+export interface PendingComment {
+  id: string;
+  path: string;
+  line: number;
+  body: string;
+}
+
 export interface AppConfig {
   githubToken?: string;
   defaultRepo?: string;

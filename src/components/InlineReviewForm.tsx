@@ -45,7 +45,7 @@ export function InlineReviewForm({ file, line, onSubmit, onCancel, loading = fal
       <Box borderStyle="round" borderColor="yellow" padding={2} minWidth={60}>
         <Box flexDirection="column">
           <Text color="yellow" bold marginBottom={1}>
-            📝 Add Review Comment
+            📝 Add Pending Review Comment
           </Text>
 
           <Box marginBottom={1}>
@@ -69,15 +69,8 @@ export function InlineReviewForm({ file, line, onSubmit, onCancel, loading = fal
 
           <Box marginTop={1}>
             <Text color="gray">
-              Review comment suggestions:
+              This comment will be added as pending and submitted with your review
             </Text>
-          </Box>
-          
-          <Box flexDirection="column" marginTop={1}>
-            <Text color="gray">• Point out potential issues or bugs</Text>
-            <Text color="gray">• Suggest improvements or optimizations</Text>
-            <Text color="gray">• Ask questions about implementation</Text>
-            <Text color="gray">• Reference related code or documentation</Text>
           </Box>
 
           <Box justifyContent="center" marginTop={2}>

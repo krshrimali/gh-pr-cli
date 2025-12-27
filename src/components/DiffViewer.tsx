@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { openInBrowser } from '../utils/browser.js';
-import type { File } from '../types/github.js';
+import { InlineReviewForm } from './InlineReviewForm.js';
+import type { File, PendingComment } from '../types/github.js';
 import type { GitHubService } from '../services/github.js';
 
 interface DiffViewerProps {
@@ -10,6 +11,9 @@ interface DiffViewerProps {
   height?: number;
   githubService: GitHubService;
   prNumber: number;
+  commitSha: string;
+  onAddPendingComment: (path: string, line: number, body: string) => void;
+  pendingComments: PendingComment[];
 }
 
 interface ParsedDiffLine {
@@ -20,11 +24,14 @@ interface ParsedDiffLine {
   originalLine: string;
 }
 
-export function DiffViewer({ file, onBack, height = 20, githubService, prNumber }: DiffViewerProps) {
+export function DiffViewer({ file, onBack, height = 20, githubService, prNumber, commitSha, onAddPendingComment, pendingComments }: DiffViewerProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
   const [wrapLines, setWrapLines] = useState(false);
   const [showLineNumbers, setShowLineNumbers] = useState(true);
   const [diffLines, setDiffLines] = useState<ParsedDiffLine[]>([]);
+  const [currentLineIndex, setCurrentLineIndex] = useState(0);
+  const [showCommentForm, setShowCommentForm] = useState(false);
+  const [commentFormLine, setCommentFormLine] = useState<number | null>(null);
 
   useEffect(() => {
     if (file.patch) {
@@ -101,6 +108,23 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber 
     return parsed;
   };
 
+  const isCommentableLine = (line: ParsedDiffLine): boolean => {
+    return line.newLineNumber !== undefined && (line.type === 'add' || line.type === 'context');
+  };
+
+  const handleCommentSubmit = async (body: string) => {
+    if (commentFormLine && file.filename) {
+      onAddPendingComment(file.filename, commentFormLine, body);
+      setShowCommentForm(false);
+      setCommentFormLine(null);
+    }
+  };
+
+  const handleCommentCancel = () => {
+    setShowCommentForm(false);
+    setCommentFormLine(null);
+  };
+
   const getVisibleLines = () => {
     const viewHeight = height - 4; // Account for header and footer
     const start = scrollOffset;
@@ -164,26 +188,56 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber 
     }
   };
 
+  const visibleLines = getVisibleLines();
+  const maxScroll = Math.max(0, diffLines.length - (height - 4));
+
   useInput((input, key) => {
+    // If comment form is showing, don't handle input here
+    if (showCommentForm) {
+      return;
+    }
+
     if (key.escape) {
       onBack();
       return;
     }
 
     const maxScroll = Math.max(0, diffLines.length - (height - 4));
+    const viewHeight = height - 4;
 
     if (key.upArrow || input === 'k') {
-      setScrollOffset(Math.max(0, scrollOffset - 1));
+      // Move cursor up or scroll up
+      if (currentLineIndex > 0) {
+        setCurrentLineIndex(currentLineIndex - 1);
+      } else if (scrollOffset > 0) {
+        setScrollOffset(scrollOffset - 1);
+      }
     } else if (key.downArrow || input === 'j') {
-      setScrollOffset(Math.min(maxScroll, scrollOffset + 1));
+      // Move cursor down or scroll down
+      if (currentLineIndex < viewHeight - 1 && currentLineIndex < visibleLines.length - 1) {
+        setCurrentLineIndex(currentLineIndex + 1);
+      } else if (scrollOffset < maxScroll) {
+        setScrollOffset(scrollOffset + 1);
+      }
     } else if (key.pageUp) {
-      setScrollOffset(Math.max(0, scrollOffset - (height - 4)));
+      setScrollOffset(Math.max(0, scrollOffset - viewHeight));
+      setCurrentLineIndex(0);
     } else if (key.pageDown) {
-      setScrollOffset(Math.min(maxScroll, scrollOffset + (height - 4)));
+      setScrollOffset(Math.min(maxScroll, scrollOffset + viewHeight));
+      setCurrentLineIndex(0);
     } else if (input === 'g') {
       setScrollOffset(0);
+      setCurrentLineIndex(0);
     } else if (input === 'G') {
       setScrollOffset(maxScroll);
+      setCurrentLineIndex(Math.min(viewHeight - 1, diffLines.length - maxScroll - 1));
+    } else if (input === 'c') {
+      // Open comment form for current line
+      const currentLine = visibleLines[currentLineIndex];
+      if (currentLine && isCommentableLine(currentLine) && currentLine.newLineNumber) {
+        setCommentFormLine(currentLine.newLineNumber);
+        setShowCommentForm(true);
+      }
     } else if (input === 'w') {
       setWrapLines(!wrapLines);
     } else if (input === 'n') {
@@ -193,10 +247,7 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber 
       const fileUrl = githubService.getWebUrl(`/pull/${prNumber}/files#diff-${encodeURIComponent(file.filename)}`);
       openInBrowser(fileUrl);
     }
-  });
-
-  const visibleLines = getVisibleLines();
-  const maxScroll = Math.max(0, diffLines.length - (height - 4));
+  }, { isActive: !showCommentForm });
 
   return (
     <Box flexDirection="column" height={height} width="100%">
@@ -235,6 +286,9 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber 
         ) : (
           visibleLines.map((line, index) => {
             const displayIndex = scrollOffset + index;
+            const isCursorLine = index === currentLineIndex;
+            const hasPendingComment = line.newLineNumber &&
+              pendingComments.some(pc => pc.line === line.newLineNumber);
             const lineColor = getLineColor(line.type);
             const linePrefix = getLinePrefix(line.type);
             const lineNumber = renderLineNumber(line);
@@ -244,16 +298,37 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber 
               <Box key={displayIndex} flexDirection="column">
                 {wrappedContent.map((wrappedLine, wrapIndex) => (
                   <Box key={`${displayIndex}-${wrapIndex}`}>
+                    {/* Cursor indicator */}
+                    {wrapIndex === 0 && (
+                      <Text color={isCursorLine ? 'cyan' : 'gray'} bold={isCursorLine}>
+                        {isCursorLine ? '>' : ' '}
+                      </Text>
+                    )}
+                    {wrapIndex > 0 && <Text> </Text>}
+
+                    {/* Line numbers */}
                     {wrapIndex === 0 && showLineNumbers && (
                       <Text color="gray">{lineNumber}</Text>
                     )}
                     {wrapIndex > 0 && showLineNumbers && (
                       <Text color="gray">           </Text>
                     )}
-                    <Text color={lineColor as any}>
+
+                    {/* Content */}
+                    <Text
+                      color={lineColor as any}
+                      backgroundColor={isCursorLine && isCommentableLine(line) ? 'blue' : undefined}
+                    >
                       {wrapIndex === 0 ? linePrefix : ' '}
                       {wrappedLine}
                     </Text>
+
+                    {/* Pending comment indicator */}
+                    {wrapIndex === 0 && hasPendingComment && (
+                      <Text color="yellow" marginLeft={1}>
+                        💬 pending
+                      </Text>
+                    )}
                   </Box>
                 ))}
               </Box>
@@ -267,13 +342,29 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber 
         <Box width="100%" justifyContent="space-between">
           <Text color="cyan">
             {file.status.toUpperCase()} • {file.changes} changes
+            {pendingComments.length > 0 && (
+              <Text color="yellow">
+                {' • '}{pendingComments.length} pending
+              </Text>
+            )}
           </Text>
           <Text color="gray">
-            ESC: Back • ↑↓/j/k: Scroll • PgUp/PgDn: Page • w: Wrap • n: Line numbers
+            ESC: Back • ↑↓/j/k: Navigate cursor • c: Comment on line • w: Wrap • n: Line numbers
             {' • b: Open in browser'}
           </Text>
         </Box>
       </Box>
+
+      {/* Comment Form Overlay */}
+      {showCommentForm && commentFormLine && (
+        <InlineReviewForm
+          file={file.filename}
+          line={commentFormLine}
+          onSubmit={handleCommentSubmit}
+          onCancel={handleCommentCancel}
+          loading={false}
+        />
+      )}
     </Box>
   );
 }
