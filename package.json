@@ -29,6 +29,7 @@
     "ink": "^6.6.0",
     "inquirer": "^13.1.0",
     "react": "^19.2.3",
+    "react-devtools-core": "^6.1.5",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
