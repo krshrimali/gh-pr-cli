@@ -4,13 +4,15 @@
   "description": "",
   "main": "dist/cli.js",
   "bin": {
-    "gh-pr-review": "./bin/gh-pr-review"
+    "gh-pr-review": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --skipLibCheck",
     "start": "tsx src/cli.ts",
     "dev": "tsx watch src/cli.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:binary": "npm run build && pkg dist/cli.js --out-path dist/binaries",
+    "build:all": "npm run build && pkg dist/cli.js --targets node18-linux-x64,node18-macos-x64,node18-macos-arm64,node18-win-x64 --out-path dist/binaries"
   },
   "keywords": [],
   "author": "",
@@ -32,6 +34,14 @@
   },
   "devDependencies": {
     "@types/blessed": "^0.1.27",
-    "@types/inquirer": "^9.0.9"
+    "@types/inquirer": "^9.0.9",
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "scripts": "dist/cli.js",
+    "assets": [
+      "node_modules/**/*"
+    ],
+    "outputPath": "dist/binaries"
   }
 }
