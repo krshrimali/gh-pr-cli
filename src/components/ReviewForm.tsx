@@ -17,7 +17,8 @@ export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComment
   const [mode, setMode] = useState<'select' | 'comment'>('select');
 
   useInput((input, key) => {
-    if (key.escape) {
+    // Ctrl+q to cancel/go back
+    if (key.ctrl && input === 'q') {
       if (mode === 'comment') {
         setMode('select');
       } else {
@@ -26,6 +27,7 @@ export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComment
       return;
     }
 
+    // Only handle other shortcuts in select mode
     if (mode === 'select') {
       if (input === 'a') {
         setSelectedState('approve');
@@ -41,7 +43,7 @@ export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComment
         }
       }
     }
-  }, { isActive: mode === 'select' });
+  }, { isActive: !loading });
 
   const handleSubmit = () => {
     if (body.trim() || selectedState === 'approve') {
@@ -87,9 +89,9 @@ export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComment
             </Box>
 
             <Box justifyContent="center" marginTop={1}>
-              <Text color="green" bold>✓ Enter: Submit</Text>
+              <Text color="green" bold>✓ Enter: Submit review</Text>
               <Text color="gray"> • </Text>
-              <Text color="red" bold>✗ ESC: Back</Text>
+              <Text color="red" bold>✗ Ctrl+q: Back to review type selection</Text>
             </Box>
           </Box>
         </Box>

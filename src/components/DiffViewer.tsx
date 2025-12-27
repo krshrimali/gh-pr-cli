@@ -219,11 +219,6 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
   const maxScroll = Math.max(0, diffLines.length - (height - 4));
 
   useInput((input, key) => {
-    // If comment form is showing, don't handle input here
-    if (showCommentForm) {
-      return;
-    }
-
     if (key.escape) {
       if (isSelecting) {
         // Cancel selection

@@ -13,11 +13,12 @@ export function CommentForm({ onSubmit, onCancel, loading = false, placeholder =
   const [body, setBody] = useState('');
 
   useInput((input, key) => {
-    if (key.escape) {
+    // Ctrl+q to cancel and go back
+    if (key.ctrl && input === 'q') {
       onCancel();
       return;
     }
-  });
+  }, { isActive: !loading });
 
   const handleSubmit = () => {
     if (body.trim()) {
@@ -72,7 +73,7 @@ export function CommentForm({ onSubmit, onCancel, loading = false, placeholder =
           <Box justifyContent="center" marginTop={1}>
             <Text color="green" bold>✓ Enter: Submit</Text>
             <Text color="gray"> • </Text>
-            <Text color="red" bold>✗ ESC: Cancel</Text>
+            <Text color="red" bold>✗ Ctrl+q: Cancel</Text>
           </Box>
         </Box>
       </Box>
