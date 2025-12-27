@@ -28,6 +28,7 @@ export function App({ config, githubService }: AppProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [createLoading, setCreateLoading] = useState(false);
+  const [prState, setPrState] = useState<'open' | 'closed' | 'all'>('open');
 
   useEffect(() => {
     loadPRs();
@@ -45,14 +46,15 @@ export function App({ config, githubService }: AppProps) {
     }
   };
 
-  const loadPRs = async () => {
+  const loadPRs = async (state: 'open' | 'closed' | 'all' = prState) => {
     setLoading(true);
     setError(null);
     try {
-      console.log('🔍 Loading PRs...');
-      const pullRequests = await githubService.listPullRequests('open', 50);
+      console.log(`🔍 Loading ${state} PRs...`);
+      const pullRequests = await githubService.listPullRequests(state, 50);
       console.log(`📝 Found ${pullRequests.length} PRs`);
       setPrs(pullRequests);
+      setSelectedIndex(0); // Reset selection when changing state
     } catch (err) {
       console.error('❌ Error loading PRs:', err);
       setError(err instanceof Error ? err.message : 'Failed to load PRs');
@@ -76,6 +78,13 @@ export function App({ config, githubService }: AppProps) {
       setError(err instanceof Error ? err.message : 'Search failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const changePrState = async (newState: 'open' | 'closed' | 'all') => {
+    if (newState !== prState) {
+      setPrState(newState);
+      await loadPRs(newState);
     }
   };
 
@@ -144,6 +153,21 @@ export function App({ config, githubService }: AppProps) {
 
     if (input === 'r' && mode === 'list') {
       loadPRs();
+      return;
+    }
+
+    if (input === '1' && mode === 'list') {
+      changePrState('open');
+      return;
+    }
+
+    if (input === '2' && mode === 'list') {
+      changePrState('closed');
+      return;
+    }
+
+    if (input === '3' && mode === 'list') {
+      changePrState('all');
       return;
     }
 
@@ -222,6 +246,7 @@ export function App({ config, githubService }: AppProps) {
             onSelect={openPRDetail}
             loading={loading}
             error={error}
+            currentState={prState}
           />
         );
     }
@@ -230,9 +255,25 @@ export function App({ config, githubService }: AppProps) {
   return (
     <Box flexDirection="column" height="100%">
       <Box borderStyle="round" borderColor="cyan" padding={1}>
-        <Text color="cyan" bold>
-          🚀 GitHub PR Review CLI
-        </Text>
+        <Box width="100%" justifyContent="space-between">
+          <Text color="cyan" bold>
+            🚀 GitHub PR Review CLI
+          </Text>
+          <Box>
+            <Text color="white">Filter: </Text>
+            <Text color={prState === 'open' ? 'cyan' : 'gray'} bold={prState === 'open'}>
+              🟢 Open(1)
+            </Text>
+            <Text color="gray"> • </Text>
+            <Text color={prState === 'closed' ? 'cyan' : 'gray'} bold={prState === 'closed'}>
+              🔴 Closed(2)
+            </Text>
+            <Text color="gray"> • </Text>
+            <Text color={prState === 'all' ? 'cyan' : 'gray'} bold={prState === 'all'}>
+              📋 All(3)
+            </Text>
+          </Box>
+        </Box>
       </Box>
       
       <Box flex={1}>
@@ -245,6 +286,7 @@ export function App({ config, githubService }: AppProps) {
         error={error}
         prCount={prs.length}
         selectedPR={selectedPR}
+        prState={prState}
       />
     </Box>
   );
