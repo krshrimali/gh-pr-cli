@@ -69,12 +69,43 @@ export function getGitHubToken(): string {
   );
 }
 
-export function parseRepoFromGit(): { owner: string; repo: string } | null {
+export function parseRepoFromGit(): { owner: string; repo: string; baseUrl?: string } | null {
   try {
     const remoteUrl = execSync('git remote get-url origin', { encoding: 'utf-8' }).trim();
     
-    const match = remoteUrl.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
-    return match ? { owner: match[1], repo: match[2] } : null;
+    // Use the same parsing logic as GitHubService
+    const patterns = [
+      // Standard GitHub
+      /(?:https?:\/\/)?github\.com[:/]([^/]+)\/([^/.]+)/,
+      // Enterprise GitHub: https://github.enterprise.com/owner/repo
+      /(?:https?:\/\/)?([^/]+\.com)[:/]([^/]+)\/([^/.]+)/,
+      // Generic git URL pattern  
+      /(?:https?:\/\/)?([^/]+)[:/]([^/]+)\/([^/.]+)/
+    ];
+
+    for (const pattern of patterns) {
+      const match = remoteUrl.match(pattern);
+      if (match) {
+        if (match.length === 3) {
+          // Standard github.com pattern
+          return { owner: match[1], repo: match[2] };
+        } else if (match.length === 4) {
+          // Enterprise pattern with hostname
+          const hostname = match[1];
+          const owner = match[2];
+          const repo = match[3];
+          
+          // Extract base URL from hostname
+          const baseUrl = hostname.includes('github.com') 
+            ? 'https://github.com' 
+            : `https://${hostname}`;
+            
+          return { owner, repo, baseUrl };
+        }
+      }
+    }
+    
+    return null;
   } catch (error) {
     return null;
   }

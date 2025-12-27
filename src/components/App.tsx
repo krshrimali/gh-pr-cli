@@ -177,7 +177,9 @@ export function App({ config, githubService }: AppProps) {
         }
       } else if (input === 'b' && prs[selectedIndex]) {
         // Open selected PR in browser
-        openInBrowser(prs[selectedIndex].html_url);
+        const pr = prs[selectedIndex];
+        const webUrl = githubService.getWebUrl(`/pull/${pr.number}`);
+        openInBrowser(webUrl);
       }
     }
   });

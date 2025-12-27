@@ -107,6 +107,8 @@ export type ReviewState = 'approve' | 'request_changes' | 'comment';
 export interface AppConfig {
   githubToken?: string;
   defaultRepo?: string;
+  githubUrl?: string;
+  githubApiUrl?: string;
   theme: 'light' | 'dark' | 'auto';
   keybindings: Record<string, string>;
 }
