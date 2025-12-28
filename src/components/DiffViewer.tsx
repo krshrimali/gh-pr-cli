@@ -170,15 +170,25 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
 
   const getOriginalLinesForSuggestion = (startIndex: number, endIndex?: number): string[] => {
     const lines: string[] = [];
-    const actualEndIndex = endIndex || startIndex;
     
-    for (let i = startIndex; i <= actualEndIndex && i < diffLines.length; i++) {
+    // If startIndex is -1 (line not found), return a default line
+    if (startIndex === -1) {
+      return ['// Code line not found - please edit manually'];
+    }
+    
+    const actualEndIndex = endIndex && endIndex !== -1 ? endIndex : startIndex;
+    const start = Math.min(startIndex, actualEndIndex);
+    const end = Math.max(startIndex, actualEndIndex);
+    
+    for (let i = start; i <= end && i < diffLines.length; i++) {
       const line = diffLines[i];
-      if (line.type === 'context' || line.type === 'remove' || line.type === 'add') {
-        lines.push(line.content.replace(/^[+\-\s]/, '')); // Remove diff prefixes
+      if (line.type === 'context' || line.type === 'add') {
+        // For suggestions, we want the current content (not removed lines)
+        lines.push(line.content || '');
       }
     }
     
+    // Always return at least one line for editing
     return lines.length > 0 ? lines : [''];
   };
 
@@ -496,14 +506,56 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
             const lineColor = getLineColor(line.type);
             const linePrefix = getLinePrefix(line.type);
             const lineNumber = renderLineNumber(line);
-            const canSuggest = (line.type === 'add' || line.type === 'context') && line.newLineNumber;
             const wrappedContent = wrapText(line.content, 80);
-
-            // Check if line is in selection range
+            
+            // Check if line is in selection range first
             const range = getSelectedRange();
             const isInSelection = range && line.newLineNumber &&
               line.newLineNumber >= range.start &&
               line.newLineNumber <= range.end;
+            
+            // Check if current line or selection can be used for suggestions
+            let canSuggest = false;
+            let suggestionStatus = '';
+            
+            if (range && isInSelection) {
+              // Multi-line selection - check all lines in selection
+              const startIdx = diffLines.findIndex(l => l.newLineNumber === range.start);
+              const endIdx = diffLines.findIndex(l => l.newLineNumber === range.end);
+              
+              if (startIdx !== -1 && endIdx !== -1) {
+                const selectedLines = diffLines.slice(startIdx, endIdx + 1);
+                const hasInvalidLines = selectedLines.some(l => 
+                  l.type === 'remove' || l.type === 'header' || l.type === 'hunk' || !l.newLineNumber
+                );
+                const allValidLines = selectedLines.every(l => 
+                  (l.type === 'add' || l.type === 'context') && l.newLineNumber
+                );
+                
+                if (hasInvalidLines) {
+                  canSuggest = false;
+                  suggestionStatus = '🚫 selection contains invalid lines';
+                } else if (allValidLines && selectedLines.length > 0) {
+                  canSuggest = true;
+                  suggestionStatus = `💡 ${selectedLines.length} lines selected`;
+                } else {
+                  canSuggest = false;
+                  suggestionStatus = '🚫 invalid selection';
+                }
+              }
+            } else if (isCursorLine) {
+              // Single line - check current line
+              canSuggest = (line.type === 'add' || line.type === 'context') && line.newLineNumber;
+              if (canSuggest) {
+                suggestionStatus = '💡 can suggest';
+              } else if (line.type === 'remove') {
+                suggestionStatus = '🚫 deleted line';
+              } else if (line.type === 'header' || line.type === 'hunk') {
+                suggestionStatus = '🚫 header line';
+              } else {
+                suggestionStatus = '🚫 no suggestions';
+              }
+            }
 
             return (
               <Box key={displayIndex} flexDirection="column">
@@ -546,14 +598,9 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
                     )}
 
                     {/* Suggestion capability indicator */}
-                    {wrapIndex === 0 && isCursorLine && canSuggest && (
-                      <Text color="yellow" marginLeft={1}>
-                        💡 can suggest
-                      </Text>
-                    )}
-                    {wrapIndex === 0 && isCursorLine && !canSuggest && line.type !== 'header' && line.type !== 'hunk' && (
-                      <Text color="gray" marginLeft={1}>
-                        🚫 no suggestions
+                    {wrapIndex === 0 && suggestionStatus && (isInSelection || isCursorLine) && (
+                      <Text color={canSuggest ? "yellow" : "gray"} marginLeft={1}>
+                        {suggestionStatus}
                       </Text>
                     )}
                   </Box>

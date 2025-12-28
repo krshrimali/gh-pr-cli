@@ -15,47 +15,14 @@ export function SuggestionForm({ onSubmit, onCancel, originalLines, filePath, st
   const [mode, setMode] = useState<'suggestion' | 'comment'>('suggestion');
   const [suggestionText, setSuggestionText] = useState('');
   const [commentText, setCommentText] = useState('');
-  const [isEditingText, setIsEditingText] = useState(false);
-  const [editTimeout, setEditTimeout] = useState<NodeJS.Timeout | null>(null);
 
   // Initialize suggestion with original lines
   useEffect(() => {
-    setSuggestionText(originalLines.join('\n'));
+    const text = originalLines.join('\n');
+    setSuggestionText(text);
   }, [originalLines]);
 
-  // Reset editing state when switching modes
-  useEffect(() => {
-    setIsEditingText(false);
-    if (editTimeout) {
-      clearTimeout(editTimeout);
-      setEditTimeout(null);
-    }
-  }, [mode, editTimeout]);
-
-  // Helper function to manage editing timeout
-  const startEditingTimeout = () => {
-    if (editTimeout) {
-      clearTimeout(editTimeout);
-    }
-    setIsEditingText(true);
-    const timeout = setTimeout(() => {
-      setIsEditingText(false);
-      setEditTimeout(null);
-    }, 2000); // 2 seconds of inactivity before allowing navigation
-    setEditTimeout(timeout);
-  };
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (editTimeout) {
-        clearTimeout(editTimeout);
-      }
-    };
-  }, [editTimeout]);
-
   useInput((input, key) => {
-    // Always allow these shortcuts regardless of editing state
     if (key.escape) {
       onCancel();
       return;
@@ -66,19 +33,14 @@ export function SuggestionForm({ onSubmit, onCancel, originalLines, filePath, st
       return;
     }
 
-    // Only allow mode switching when not editing text
-    if (!isEditingText) {
-      if (key.tab && !key.shift) {
-        // Tab to go to next mode
-        setMode(mode === 'suggestion' ? 'comment' : 'suggestion');
-        return;
-      }
+    if (key.tab && !key.shift) {
+      setMode(mode === 'suggestion' ? 'comment' : 'suggestion');
+      return;
+    }
 
-      if (key.tab && key.shift) {
-        // Shift+Tab to go to previous mode
-        setMode(mode === 'comment' ? 'suggestion' : 'comment');
-        return;
-      }
+    if (key.tab && key.shift) {
+      setMode(mode === 'comment' ? 'suggestion' : 'comment');
+      return;
     }
   });
 
@@ -86,7 +48,6 @@ export function SuggestionForm({ onSubmit, onCancel, originalLines, filePath, st
     if (suggestionText.trim() !== originalLines.join('\n')) {
       onSubmit(suggestionText, commentText.trim() || undefined);
     } else {
-      // No changes made
       onCancel();
     }
   };
@@ -96,7 +57,7 @@ export function SuggestionForm({ onSubmit, onCancel, originalLines, filePath, st
     : startLine.toString();
 
   return (
-    <Box position="absolute" top={2} left={2} right={2} bottom={2}>
+    <Box position="absolute" top={0} left={0} right={0} bottom={0}>
       <Box 
         flexDirection="column" 
         height="100%" 
@@ -129,23 +90,23 @@ export function SuggestionForm({ onSubmit, onCancel, originalLines, filePath, st
         </Box>
 
         {/* Current mode content */}
-        <Box flexDirection="column" flex={1}>
+        <Box flexDirection="column" flexGrow={1}>
           {mode === 'suggestion' ? (
             <Box flexDirection="column" height="100%">
               <Text color="green" marginBottom={1}>
-                Edit the code below (this will replace the original):
+                Edit the code below (original content loaded):
               </Text>
-              <Box borderStyle="single" borderColor="green" padding={1} flex={1}>
-                <TextInput
-                  value={suggestionText}
-                  onChange={(value) => {
-                    setSuggestionText(value);
-                    startEditingTimeout();
-                  }}
-                  onSubmit={() => setIsEditingText(false)}
-                  placeholder="Edit the code..."
-                  focus={mode === 'suggestion'}
-                />
+              <Box borderStyle="single" borderColor="green" padding={1} flexGrow={1}>
+                <Box flexDirection="column" width="100%">
+                  <Text color="gray" marginBottom={1}>
+                    Original: {originalLines.length} lines
+                  </Text>
+                  <TextInput
+                    value={suggestionText}
+                    onChange={setSuggestionText}
+                    placeholder="Code will appear here..."
+                  />
+                </Box>
               </Box>
             </Box>
           ) : (
@@ -153,23 +114,18 @@ export function SuggestionForm({ onSubmit, onCancel, originalLines, filePath, st
               <Text color="cyan" marginBottom={1}>
                 Explain your suggestion (optional):
               </Text>
-              <Box borderStyle="single" borderColor="cyan" padding={1} flex={1}>
+              <Box borderStyle="single" borderColor="cyan" padding={1} flexGrow={1}>
                 <TextInput
                   value={commentText}
-                  onChange={(value) => {
-                    setCommentText(value);
-                    startEditingTimeout();
-                  }}
-                  onSubmit={() => setIsEditingText(false)}
+                  onChange={setCommentText}
                   placeholder="Why this change is needed..."
-                  focus={mode === 'comment'}
                 />
               </Box>
             </Box>
           )}
         </Box>
 
-        {/* Footer with instructions */}
+        {/* Footer */}
         <Box marginTop={1} borderStyle="single" borderColor="gray" padding={1}>
           <Box justifyContent="space-between">
             <Text color="white">
