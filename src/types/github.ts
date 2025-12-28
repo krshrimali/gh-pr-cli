@@ -113,6 +113,9 @@ export interface PendingComment {
   startLine?: number;
   body: string;
   inReplyTo?: number;
+  isSuggestion?: boolean;
+  suggestedChange?: string;
+  originalLines?: string[];
 }
 
 export interface CommentThread {

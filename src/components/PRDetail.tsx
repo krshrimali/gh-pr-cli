@@ -32,6 +32,7 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
   const [mergeable, setMergeable] = useState<boolean | null>(null);
   const [mergeableState, setMergeableState] = useState<string>('');
   const [pendingComments, setPendingComments] = useState<PendingComment[]>([]);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -82,6 +83,24 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
       inReplyTo,
     };
     setPendingComments([...pendingComments, newComment]);
+  };
+
+  const addPendingSuggestion = (path: string, line: number, suggestedChange: string, originalLines: string[], comment?: string, startLine?: number) => {
+    const suggestionBody = comment 
+      ? `${comment}\n\n\`\`\`suggestion\n${suggestedChange}\n\`\`\``
+      : `\`\`\`suggestion\n${suggestedChange}\n\`\`\``;
+    
+    const newSuggestion: PendingComment = {
+      id: crypto.randomUUID(),
+      path,
+      line,
+      startLine,
+      body: suggestionBody,
+      isSuggestion: true,
+      suggestedChange,
+      originalLines,
+    };
+    setPendingComments([...pendingComments, newSuggestion]);
   };
 
   const deletePendingComment = (id: string) => {
@@ -154,11 +173,15 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
       // Open diff view for selected file
       setSelectedFile(files[selectedIndex]);
       setMode('diff');
+    } else if (input === 'R') {
+      // Start review mode (standalone R key)
+      setMode('review_form');
     }
   });
 
   const submitReview = async (state: ReviewState, body: string) => {
     setReviewLoading(true);
+    setReviewError(null); // Clear previous errors
     try {
       const comments = pendingComments.length > 0
         ? pendingComments.map(pc => ({
@@ -175,8 +198,10 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
       clearPendingComments(); // Clear after success
       setMode('reviews');
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setReviewError(errorMessage);
       console.error('Failed to submit review:', error);
-      console.error('Error details:', error instanceof Error ? error.message : String(error));
+      console.error('Error details:', errorMessage);
       // Stay in review form so user can see the error and try again
     } finally {
       setReviewLoading(false);
@@ -184,7 +209,12 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
   };
 
   const cancelReview = () => {
+    setReviewError(null); // Clear error when canceling
     setMode('overview');
+  };
+
+  const clearReviewError = () => {
+    setReviewError(null);
   };
 
   const mergePullRequest = async (options: {
@@ -437,11 +467,22 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
     </ScrollableBox>
   );
 
-  const renderReviews = () => (
-    <Box flexDirection="column" padding={1}>
-      <Text color="white" bold marginBottom={1}>
-        🔍 Reviews ({reviews.length})
-      </Text>
+  const renderReviews = () => {
+    const currentUserReviews = reviews.filter(r => r.user.login === 'current_user'); // Will need to get actual username
+    const hasExistingReview = currentUserReviews.length > 0;
+    
+    return (
+      <Box flexDirection="column" padding={1}>
+        <Box justifyContent="space-between" marginBottom={1}>
+          <Text color="white" bold>
+            🔍 Reviews ({reviews.length})
+          </Text>
+          {pr.state === 'open' && (
+            <Text color="green" bold>
+              Press 'R' to {hasExistingReview ? 'update your review' : 'submit a review'}
+            </Text>
+          )}
+        </Box>
 
       {reviews.map((review, index) => {
         const isSelected = index === selectedIndex;
@@ -483,8 +524,17 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
           </Box>
         );
       })}
+      
+      {reviews.length === 0 && pr.state === 'open' && (
+        <Box justifyContent="center" padding={2}>
+          <Text color="gray">
+            No reviews yet. Press 'R' to be the first to review this PR!
+          </Text>
+        </Box>
+      )}
     </Box>
-  );
+    );
+  };
 
   const renderContent = () => {
     switch (mode) {
@@ -498,6 +548,7 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
           prNumber={pr.number}
           commitSha={pr.head.sha}
           onAddPendingComment={addPendingComment}
+          onAddPendingSuggestion={addPendingSuggestion}
           pendingComments={pendingComments.filter(pc => pc.path === selectedFile.filename)}
           existingComments={reviewComments.filter(rc => rc.path === selectedFile.filename)}
         />
@@ -515,6 +566,8 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
           loading={reviewLoading}
           pendingComments={pendingComments}
           onDeletePendingComment={deletePendingComment}
+          error={reviewError}
+          onClearError={clearReviewError}
         />
       );
       case 'merge_form': return (
@@ -570,11 +623,11 @@ export function PRDetail({ pr, githubService }: PRDetailProps) {
       <Box borderStyle="single" borderColor="gray" padding={1}>
         <Box width="100%" justifyContent="space-between">
           <Text color="gray">
-            Ctrl+o/f/d/c/r: Tabs • Ctrl+R: Review
+            Ctrl+o/f/d/c/r: Tabs • R: Start Review
             {pr.state === 'open' && ' • Ctrl+m: Merge'}
             {pendingComments.length > 0 && (
               <Text color="yellow">
-                {' • '}{pendingComments.length} pending comment{pendingComments.length !== 1 ? 's' : ''}
+                {' • '}{pendingComments.length} pending ({pendingComments.filter(c => c.isSuggestion).length}💡 {pendingComments.filter(c => !c.isSuggestion).length}💬)
               </Text>
             )}
             {mode === 'overview' || mode === 'files' || mode === 'comments' || mode === 'reviews' ? (

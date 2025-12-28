@@ -10,7 +10,11 @@ import { getGitHubToken, parseRepoFromGit, parseRepoFromArgs, loadConfig } from 
 // Custom function to check if raw mode is supported
 function isRawModeSupported(): boolean {
   try {
-    return Boolean(process.stdin.isTTY && process.stdin.setRawMode);
+    return Boolean(
+      process.stdin && 
+      process.stdin.isTTY === true && 
+      typeof process.stdin.setRawMode === 'function'
+    );
   } catch {
     return false;
   }
@@ -68,9 +72,10 @@ async function main() {
     console.log(`🔍 Debug: TTY: ${process.stdin.isTTY}, Raw Mode Supported: ${isRawModeSupported()}`);
     
     // Check if stdin is available and in TTY mode
-    if (!process.stdin.isTTY) {
+    if (!process.stdin || process.stdin.isTTY !== true) {
       console.error('❌ This application requires an interactive terminal (TTY).');
       console.error('Try running in a proper terminal or use: script -q /dev/null gh-pr-review');
+      console.error('Current environment: stdin exists:', !!process.stdin, 'isTTY:', process.stdin?.isTTY);
       process.exit(1);
     }
 

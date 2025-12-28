@@ -9,14 +9,36 @@ interface ReviewFormProps {
   loading?: boolean;
   pendingComments?: PendingComment[];
   onDeletePendingComment?: (id: string) => void;
+  error?: string | null;
+  onClearError?: () => void;
 }
 
-export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComments, onDeletePendingComment }: ReviewFormProps) {
+export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComments, onDeletePendingComment, error, onClearError }: ReviewFormProps) {
   const [selectedState, setSelectedState] = useState<ReviewState>('comment');
   const [body, setBody] = useState('');
   const [mode, setMode] = useState<'select' | 'comment'>('select');
 
   useInput((input, key) => {
+    // Handle error state inputs
+    if (error) {
+      if (key.escape) {
+        onCancel();
+        return;
+      }
+      if (key.return) {
+        // Try again - clear error and return to form
+        if (onClearError) {
+          onClearError();
+        }
+        return;
+      }
+      if (input === 'c' && onClearError) {
+        onClearError();
+        return;
+      }
+      return; // Don't handle any other inputs in error state
+    }
+
     // Ctrl+q to cancel/go back
     if (key.ctrl && input === 'q') {
       if (mode === 'comment') {
@@ -55,6 +77,50 @@ export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComment
     return (
       <Box justifyContent="center" alignItems="center" height="100%">
         <Text color="yellow">🔄 Submitting review...</Text>
+      </Box>
+    );
+  }
+
+  // Error display
+  if (error) {
+    return (
+      <Box flexDirection="column" justifyContent="center" alignItems="center" height="100%">
+        <Box borderStyle="round" borderColor="red" padding={2} minWidth={70}>
+          <Box flexDirection="column">
+            <Text color="red" bold marginBottom={1}>
+              ❌ Review Submission Failed
+            </Text>
+            
+            <Box borderStyle="single" borderColor="red" padding={1} marginBottom={2}>
+              <Box flexDirection="column">
+                <Text color="white" bold marginBottom={1}>Error Details:</Text>
+                <Text color="red" wrap="wrap">{error}</Text>
+              </Box>
+            </Box>
+
+            <Box flexDirection="column" marginBottom={1}>
+              <Text color="yellow" marginBottom={1}>
+                💡 Common solutions:
+              </Text>
+              <Text color="gray">• Check your GitHub token permissions</Text>
+              <Text color="gray">• Ensure you have write access to this repository</Text>
+              <Text color="gray">• Verify the PR is still open and not merged</Text>
+              <Text color="gray">• Try refreshing and submitting again</Text>
+            </Box>
+
+            <Box justifyContent="center" marginTop={1}>
+              <Text color="green" bold>↩ Enter: Try Again</Text>
+              <Text color="gray"> • </Text>
+              <Text color="red" bold>✗ ESC: Cancel</Text>
+              {onClearError && (
+                <>
+                  <Text color="gray"> • </Text>
+                  <Text color="cyan" bold>🗑 C: Clear Error</Text>
+                </>
+              )}
+            </Box>
+          </Box>
+        </Box>
       </Box>
     );
   }
@@ -157,21 +223,26 @@ export function ReviewForm({ onSubmit, onCancel, loading = false, pendingComment
             })}
           </Box>
 
-          {/* Pending Comments Summary */}
+          {/* Pending Comments and Suggestions Summary */}
           {pendingComments && pendingComments.length > 0 && (
             <Box flexDirection="column" borderStyle="single" borderColor="yellow" padding={1} marginBottom={2}>
               <Text color="yellow" bold marginBottom={1}>
-                📝 {pendingComments.length} Pending Comment{pendingComments.length !== 1 ? 's' : ''}
+                📝 {pendingComments.length} Pending Item{pendingComments.length !== 1 ? 's' : ''} 
+                ({pendingComments.filter(c => c.isSuggestion).length} suggestion{pendingComments.filter(c => c.isSuggestion).length !== 1 ? 's' : ''}, {pendingComments.filter(c => !c.isSuggestion).length} comment{pendingComments.filter(c => !c.isSuggestion).length !== 1 ? 's' : ''})
               </Text>
               <Box flexDirection="column">
                 {pendingComments.slice(0, 3).map((comment) => (
                   <Box key={comment.id} flexDirection="column" marginBottom={1}>
-                    <Text color="gray">
-                      {comment.path}:{comment.line}
-                    </Text>
+                    <Box>
+                      <Text color={comment.isSuggestion ? 'green' : 'gray'}>
+                        {comment.isSuggestion ? '💡' : '💬'} {comment.path}:{comment.line}
+                      </Text>
+                    </Box>
                     <Text color="white">
-                      {comment.body.substring(0, 40)}
-                      {comment.body.length > 40 ? '...' : ''}
+                      {comment.isSuggestion 
+                        ? `Suggests code change${comment.body.includes('\n\n```suggestion') ? ' with comment' : ''}`
+                        : `${comment.body.substring(0, 40)}${comment.body.length > 40 ? '...' : ''}`
+                      }
                     </Text>
                   </Box>
                 ))}

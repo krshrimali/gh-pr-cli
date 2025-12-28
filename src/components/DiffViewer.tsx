@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { openInBrowser } from '../utils/browser.js';
 import { InlineReviewForm } from './InlineReviewForm.js';
+import { SuggestionForm } from './SuggestionForm.js';
 import type { File, PendingComment, ReviewComment } from '../types/github.js';
 import type { GitHubService } from '../services/github.js';
 import { groupCommentsByThread } from '../utils/commentThreads.js';
@@ -14,6 +15,7 @@ interface DiffViewerProps {
   prNumber: number;
   commitSha: string;
   onAddPendingComment: (path: string, line: number, body: string, startLine?: number, inReplyTo?: number) => void;
+  onAddPendingSuggestion?: (path: string, line: number, suggestedChange: string, originalLines: string[], comment?: string, startLine?: number) => void;
   pendingComments: PendingComment[];
   existingComments: ReviewComment[];
 }
@@ -26,7 +28,7 @@ interface ParsedDiffLine {
   originalLine: string;
 }
 
-export function DiffViewer({ file, onBack, height = 20, githubService, prNumber, commitSha, onAddPendingComment, pendingComments, existingComments }: DiffViewerProps) {
+export function DiffViewer({ file, onBack, height = 20, githubService, prNumber, commitSha, onAddPendingComment, onAddPendingSuggestion, pendingComments, existingComments }: DiffViewerProps) {
   const [scrollOffset, setScrollOffset] = useState(0);
   const [wrapLines, setWrapLines] = useState(false);
   const [showLineNumbers, setShowLineNumbers] = useState(true);
@@ -39,6 +41,10 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [showSuggestionForm, setShowSuggestionForm] = useState(false);
+  const [suggestionFormLine, setSuggestionFormLine] = useState<number | null>(null);
+  const [suggestionFormStartLine, setSuggestionFormStartLine] = useState<number | undefined>(undefined);
+  const [suggestionError, setSuggestionError] = useState<string | null>(null);
 
   // Group comments by thread for display
   const commentThreads = groupCommentsByThread(existingComments);
@@ -51,6 +57,16 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
     }
     setScrollOffset(0);
   }, [file]);
+
+  // Clear suggestion error after 5 seconds
+  useEffect(() => {
+    if (suggestionError) {
+      const timeout = setTimeout(() => {
+        setSuggestionError(null);
+      }, 5000);
+      return () => clearTimeout(timeout);
+    }
+  }, [suggestionError]);
 
   const parseDiff = (patch: string): ParsedDiffLine[] => {
     const lines = patch.split('\n');
@@ -150,6 +166,54 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
     setCommentFormLine(null);
     setCommentFormStartLine(undefined);
     setReplyingToComment(null);
+  };
+
+  const getOriginalLinesForSuggestion = (startIndex: number, endIndex?: number): string[] => {
+    const lines: string[] = [];
+    const actualEndIndex = endIndex || startIndex;
+    
+    for (let i = startIndex; i <= actualEndIndex && i < diffLines.length; i++) {
+      const line = diffLines[i];
+      if (line.type === 'context' || line.type === 'remove' || line.type === 'add') {
+        lines.push(line.content.replace(/^[+\-\s]/, '')); // Remove diff prefixes
+      }
+    }
+    
+    return lines.length > 0 ? lines : [''];
+  };
+
+  const handleSuggestionSubmit = (suggestion: string, comment?: string) => {
+    if (suggestionFormLine && file.filename && onAddPendingSuggestion) {
+      const startIndex = diffLines.findIndex(line => 
+        (line.newLineNumber === suggestionFormLine || line.oldLineNumber === suggestionFormLine)
+      );
+      const endIndex = suggestionFormStartLine 
+        ? diffLines.findIndex(line => 
+            (line.newLineNumber === suggestionFormStartLine || line.oldLineNumber === suggestionFormStartLine)
+          )
+        : undefined;
+      
+      const originalLines = getOriginalLinesForSuggestion(startIndex, endIndex);
+      
+      onAddPendingSuggestion(
+        file.filename,
+        suggestionFormLine,
+        suggestion,
+        originalLines,
+        comment,
+        suggestionFormStartLine
+      );
+      
+      setShowSuggestionForm(false);
+      setSuggestionFormLine(null);
+      setSuggestionFormStartLine(undefined);
+    }
+  };
+
+  const handleSuggestionCancel = () => {
+    setShowSuggestionForm(false);
+    setSuggestionFormLine(null);
+    setSuggestionFormStartLine(undefined);
   };
 
   const getVisibleLines = () => {
@@ -314,12 +378,66 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
       setWrapLines(!wrapLines);
     } else if (input === 'n') {
       setShowLineNumbers(!showLineNumbers);
+    } else if (input === 's') {
+      // Start suggestion for current line or selection
+      setSuggestionError(null); // Clear previous errors
+      const currentLine = diffLines[currentLineIndex];
+      
+      if (!currentLine) {
+        setSuggestionError("No line selected for suggestion");
+        return;
+      }
+      
+      // Validate that suggestions can only be made on lines that exist in the new version
+      if (currentLine.type === 'remove') {
+        setSuggestionError("Cannot create suggestions on deleted lines. Suggestions can only be made on existing or newly added lines.");
+        return;
+      }
+      
+      if (currentLine.type === 'header' || currentLine.type === 'hunk') {
+        setSuggestionError("Cannot create suggestions on diff headers. Please select a code line.");
+        return;
+      }
+      
+      if (currentLine.type === 'add' || currentLine.type === 'context') {
+        const startLine = selectionStart !== null ? Math.min(selectionStart, selectionEnd || selectionStart) : currentLineIndex;
+        const endLine = selectionEnd !== null ? Math.max(selectionStart || 0, selectionEnd) : currentLineIndex;
+        
+        // Validate selection doesn't include removed lines
+        const hasRemovedLines = diffLines.slice(startLine, endLine + 1).some(line => line.type === 'remove');
+        if (hasRemovedLines) {
+          setSuggestionError("Selection includes deleted lines. Suggestions cannot span across deleted code.");
+          return;
+        }
+        
+        // Validate selection doesn't include headers
+        const hasHeaders = diffLines.slice(startLine, endLine + 1).some(line => line.type === 'header' || line.type === 'hunk');
+        if (hasHeaders) {
+          setSuggestionError("Selection includes diff headers. Please select only code lines.");
+          return;
+        }
+        
+        // Ensure we have a new line number (required for GitHub API)
+        if (!currentLine.newLineNumber) {
+          setSuggestionError("Cannot determine line position for suggestion. This line may not be valid for suggestions.");
+          return;
+        }
+        
+        setSuggestionFormLine(currentLine.newLineNumber);
+        setSuggestionFormStartLine(startLine !== endLine ? diffLines[startLine].newLineNumber : undefined);
+        setShowSuggestionForm(true);
+        
+        // Clear selection after starting suggestion
+        setSelectionStart(null);
+        setSelectionEnd(null);
+        setIsSelecting(false);
+      }
     } else if (input === 'b') {
       // Open file diff in browser
       const fileUrl = githubService.getWebUrl(`/pull/${prNumber}/files#diff-${encodeURIComponent(file.filename)}`);
       openInBrowser(fileUrl);
     }
-  }, { isActive: !showCommentForm });
+  }, { isActive: !showCommentForm && !showSuggestionForm });
 
   return (
     <Box flexDirection="column" height={height} width="100%">
@@ -334,6 +452,20 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
           </Text>
         </Box>
       </Box>
+
+      {/* Suggestion Error Display */}
+      {suggestionError && (
+        <Box borderStyle="round" borderColor="red" paddingX={1} marginY={1}>
+          <Box width="100%" justifyContent="space-between">
+            <Text color="red" bold>
+              ❌ Suggestion Error: {suggestionError}
+            </Text>
+            <Text color="gray">
+              (Auto-dismisses in 5s)
+            </Text>
+          </Box>
+        </Box>
+      )}
 
       {/* Controls */}
       <Box borderStyle="single" borderColor="gray" paddingX={1}>
@@ -364,6 +496,7 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
             const lineColor = getLineColor(line.type);
             const linePrefix = getLinePrefix(line.type);
             const lineNumber = renderLineNumber(line);
+            const canSuggest = (line.type === 'add' || line.type === 'context') && line.newLineNumber;
             const wrappedContent = wrapText(line.content, 80);
 
             // Check if line is in selection range
@@ -409,6 +542,18 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
                     {wrapIndex === 0 && hasPendingComment && (
                       <Text color="yellow" marginLeft={1}>
                         💬 pending
+                      </Text>
+                    )}
+
+                    {/* Suggestion capability indicator */}
+                    {wrapIndex === 0 && isCursorLine && canSuggest && (
+                      <Text color="yellow" marginLeft={1}>
+                        💡 can suggest
+                      </Text>
+                    )}
+                    {wrapIndex === 0 && isCursorLine && !canSuggest && line.type !== 'header' && line.type !== 'hunk' && (
+                      <Text color="gray" marginLeft={1}>
+                        🚫 no suggestions
                       </Text>
                     )}
                   </Box>
@@ -471,7 +616,7 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
             )}
           </Text>
           <Text color="gray">
-            ESC: {isSelecting ? 'Cancel selection' : 'Back'} • ↑↓/j/k: Navigate • c: {isSelecting ? 'Confirm selection' : 'Comment/Select'} • r: Reply
+            ESC: {isSelecting ? 'Cancel selection' : 'Back'} • ↑↓/j/k: Navigate • c: {isSelecting ? 'Confirm selection' : 'Comment/Select'} • s: Suggest (💡 = valid lines) • r: Reply
             {' • w: Wrap • n: Line numbers • b: Open in browser'}
           </Text>
         </Box>
@@ -487,6 +632,26 @@ export function DiffViewer({ file, onBack, height = 20, githubService, prNumber,
           onSubmit={handleCommentSubmit}
           onCancel={handleCommentCancel}
           loading={false}
+        />
+      )}
+
+      {showSuggestionForm && suggestionFormLine && (
+        <SuggestionForm
+          filePath={file.filename}
+          startLine={suggestionFormLine}
+          endLine={suggestionFormStartLine}
+          originalLines={getOriginalLinesForSuggestion(
+            diffLines.findIndex(line => 
+              (line.newLineNumber === suggestionFormLine || line.oldLineNumber === suggestionFormLine)
+            ),
+            suggestionFormStartLine 
+              ? diffLines.findIndex(line => 
+                  (line.newLineNumber === suggestionFormStartLine || line.oldLineNumber === suggestionFormStartLine)
+                )
+              : undefined
+          )}
+          onSubmit={handleSuggestionSubmit}
+          onCancel={handleSuggestionCancel}
         />
       )}
     </Box>
